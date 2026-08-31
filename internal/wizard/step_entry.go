@@ -213,6 +213,7 @@ func (s *entryStep) commit() error {
 		Source: source,
 		Path:   s.path,
 	})
+	s.state.keepKey(key.String())
 	s.state.invalidate()
 
 	return nil

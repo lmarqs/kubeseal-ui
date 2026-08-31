@@ -56,6 +56,9 @@ type app struct {
 func newApp(options Options) *app {
 	wizardState := &state{options: options}
 	wizardState.draft.Type = secret.TypeOpaque
+	// Discovery replaces this once it reports, but until then there is always a
+	// controller to fetch a certificate from.
+	wizardState.controller = seal.DefaultController()
 	if options.Merge != nil {
 		adoptExistingFile(wizardState, options.Merge)
 	}
@@ -98,7 +101,14 @@ func (a *app) current() step {
 func (a *app) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := message.(type) {
 	case tea.WindowSizeMsg:
+		// Recorded for the frame, then passed on: screens with a scrollable pane size
+		// it from the same message.
 		a.width, a.height = typed.Width, typed.Height
+
+	case controllersDiscoveredMsg:
+		// Which controller to seal for belongs to the wizard rather than to whichever
+		// screen happens to be showing when discovery finishes.
+		a.state.adoptControllers(typed)
 		return a, nil
 
 	case tea.KeyMsg:

@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
-	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
 // typeNamespaceOption is the sentinel choice that turns the picker into a text
@@ -52,31 +51,26 @@ func (s *namespaceStep) Footer() string {
 }
 
 func (s *namespaceStep) Init() tea.Cmd {
+	// A namespace given with --namespace needs no question, but the screen stays in
+	// the stack so it can be revisited.
 	if s.state.options.Namespace != "" && !s.asked {
 		s.asked = true
 		s.chosen = s.state.options.Namespace
-		return s.accept(s.chosen)
+		s.accept(s.chosen)
+		return advanceTo(newTypeStep(s.state))
 	}
 	if s.form != nil {
 		return nil
 	}
 
 	s.loading = true
-	cluster := s.state.connection.Cluster
 
-	// Controller discovery starts alongside the namespace list so the certificate is
-	// usually ready by the time the review screen needs it.
-	return tea.Batch(s.spinner.tick(), listNamespaces(cluster), discoverControllers(cluster))
+	return tea.Batch(s.spinner.tick(), listNamespaces(s.state.connection.Cluster))
 }
 
 type namespacesLoadedMsg struct {
 	namespaces []string
 	err        error
-}
-
-type controllersDiscoveredMsg struct {
-	controllers []seal.Controller
-	err         error
 }
 
 func listNamespaces(cluster Cluster) tea.Cmd {
@@ -86,32 +80,15 @@ func listNamespaces(cluster Cluster) tea.Cmd {
 	}
 }
 
-func discoverControllers(cluster Cluster) tea.Cmd {
-	return func() tea.Msg {
-		controllers, err := cluster.DiscoverControllers(context.Background())
-		return controllersDiscoveredMsg{controllers: controllers, err: err}
-	}
-}
-
 func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 	switch typed := message.(type) {
+	case advanceMsg:
+		return typed.step, typed.step.Init()
+
 	case namespacesLoadedMsg:
 		s.loading = false
 		s.build(typed.namespaces, typed.err)
 		return s, s.form.Init()
-
-	case controllersDiscoveredMsg:
-		// Discovery is a convenience: if it fails, the review screen falls back to
-		// the default controller and reports what happened there.
-		if typed.err == nil {
-			s.state.controllers = typed.controllers
-		}
-		if len(typed.controllers) > 0 {
-			s.state.controller = typed.controllers[0]
-		} else {
-			s.state.controller = seal.DefaultController()
-		}
-		return s, nil
 
 	case spinnerTickMsg:
 		if !s.loading {
@@ -144,17 +121,17 @@ func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 		if s.typing {
 			chosen = s.typed
 		}
-		return newTypeStep(s.state), s.accept(chosen)
+		s.accept(chosen)
+		return newTypeStep(s.state), nil
 	}
 
 	return s, cmd
 }
 
 // accept records the namespace, discarding any sealed secret made for another one.
-func (s *namespaceStep) accept(namespace string) tea.Cmd {
+func (s *namespaceStep) accept(namespace string) {
 	s.state.draft.Namespace = namespace
 	s.state.invalidate()
-	return nil
 }
 
 // build offers the namespaces that could be listed, and always offers typing one

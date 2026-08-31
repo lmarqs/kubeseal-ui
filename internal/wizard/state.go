@@ -54,6 +54,31 @@ func (s *state) markForRemoval(key string) {
 	s.removing = append(s.removing, key)
 }
 
+// keepKey cancels a pending removal, which is what giving the key a new value
+// means: merging drops removed keys after adding new ones, so a key left marked
+// would lose the value just entered.
+func (s *state) keepKey(key string) {
+	for index, existing := range s.removing {
+		if existing == key {
+			s.removing = append(s.removing[:index], s.removing[index+1:]...)
+			return
+		}
+	}
+}
+
+// adoptControllers records what discovery found. Discovery is a convenience: when
+// it fails or finds nothing, the stock location stands.
+func (s *state) adoptControllers(discovered controllersDiscoveredMsg) {
+	if discovered.err == nil {
+		s.controllers = discovered.controllers
+	}
+	if len(discovered.controllers) > 0 {
+		s.controller = discovered.controllers[0]
+		return
+	}
+	s.controller = seal.DefaultController()
+}
+
 // invalidate marks the sealed secret as out of date, which makes the review step
 // seal again when it is next shown.
 func (s *state) invalidate() {

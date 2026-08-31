@@ -326,9 +326,8 @@ func TestNotBeingAllowedToListNamespacesOffersTypingOneInstead(t *testing.T) {
 func TestDiscoveringNoControllerFallsBackToTheStockLocation(t *testing.T) {
 	wizardState := testState(t, testKey(t))
 	wizardState.controller = seal.Controller{}
-	step := newNamespaceStep(wizardState)
 
-	step.Update(controllersDiscoveredMsg{})
+	wizardState.adoptControllers(controllersDiscoveredMsg{})
 
 	if wizardState.controller != seal.DefaultController() {
 		t.Errorf("controller = %v, want the default", wizardState.controller)
@@ -338,9 +337,8 @@ func TestDiscoveringNoControllerFallsBackToTheStockLocation(t *testing.T) {
 func TestTheFirstDiscoveredControllerIsUsed(t *testing.T) {
 	wizardState := testState(t, testKey(t))
 	found := []seal.Controller{{Namespace: "infra", Name: "sealed-secrets"}}
-	step := newNamespaceStep(wizardState)
 
-	step.Update(controllersDiscoveredMsg{controllers: found})
+	wizardState.adoptControllers(controllersDiscoveredMsg{controllers: found})
 
 	if wizardState.controller != found[0] {
 		t.Errorf("controller = %v, want %v", wizardState.controller, found[0])
@@ -612,9 +610,12 @@ func TestNamespacesThatCannotBeListedAreReportedAsSuch(t *testing.T) {
 func TestDiscoveryFailureLeavesTheDefaultControllerInPlace(t *testing.T) {
 	cluster := &fakeCluster{controllersErr: kube.ErrForbidden}
 	wizardState := testState(t, testKey(t))
-	step := newNamespaceStep(wizardState)
 
-	step.Update(discoverControllers(cluster)())
+	message, ok := discoverControllers(cluster)().(controllersDiscoveredMsg)
+	if !ok {
+		t.Fatal("discovery reported no result")
+	}
+	wizardState.adoptControllers(message)
 
 	if wizardState.controller != seal.DefaultController() {
 		t.Errorf("controller = %v, want the default after discovery failed", wizardState.controller)
@@ -1090,7 +1091,6 @@ func mergeState(t *testing.T, key *rsa.PrivateKey, existing *seal.Existing) *sta
 		Cluster:      &fakeCluster{},
 		Certificates: fakeCertificates{certificate: certificateFor(key)},
 	}
-	application.state.controller = seal.DefaultController()
 
 	return application.state
 }
@@ -1238,5 +1238,130 @@ func TestSavingWhileEditingOffersTheFileBeingEdited(t *testing.T) {
 	}
 	if !strings.Contains(step.saveLabel(), existing.Path) {
 		t.Errorf("the save action does not name the file: %q", step.saveLabel())
+	}
+}
+
+func TestAPrefilledNamespaceMovesOnToTheNextQuestion(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.options.Namespace = "payments"
+	wizardState.draft.Namespace = ""
+	step := newNamespaceStep(wizardState)
+
+	command := step.Init()
+	if command == nil {
+		t.Fatal("Init() did nothing, so the screen would wait for an answer it already has")
+	}
+
+	advance, ok := command().(advanceMsg)
+	if !ok {
+		t.Fatalf("Init() produced %T, want the next screen to move on to", command())
+	}
+	if wizardState.draft.Namespace != "payments" {
+		t.Errorf("namespace = %q, want the one passed with --namespace", wizardState.draft.Namespace)
+	}
+
+	next, _ := step.Update(advance)
+	if _, ok := next.(*typeStep); !ok {
+		t.Errorf("next screen = %T, want the kind-of-secret question", next)
+	}
+}
+
+func TestDiscoveryIsRecordedWhicheverScreenIsShowing(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.controller = seal.Controller{}
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newNameStep(wizardState)}
+	found := []seal.Controller{{Namespace: "infra", Name: "sealed-secrets"}}
+
+	application.Update(controllersDiscoveredMsg{controllers: found})
+
+	if wizardState.controller != found[0] {
+		t.Errorf("controller = %v, want %v even though another screen was showing",
+			wizardState.controller, found[0])
+	}
+}
+
+func TestConnectingToAClusterLooksForItsControllers(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	found := []seal.Controller{{Namespace: "infra", Name: "sealed-secrets"}}
+	wizardState.connection.Cluster = &fakeCluster{controllers: found}
+	step := newContextStep(wizardState)
+
+	_, command := step.Update(clusterOpenedMsg{connection: wizardState.connection})
+
+	if command == nil {
+		t.Fatal("nothing was started, so no controller would ever be discovered")
+	}
+	message, ok := command().(controllersDiscoveredMsg)
+	if !ok {
+		t.Fatalf("connecting produced %T, want discovered controllers", command())
+	}
+	if len(message.controllers) != 1 || message.controllers[0] != found[0] {
+		t.Errorf("controllers = %v, want %v", message.controllers, found)
+	}
+}
+
+func TestReAddingAKeyMarkedForRemovalKeepsItsNewValue(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{
+		"DB_PASSWORD": []byte("hunter2"), "OTHER": []byte("kept"),
+	})
+	wizardState := mergeState(t, key, existing)
+	entries := newEntriesStep(wizardState)
+
+	entries.Update(press("d"))
+	entries.Update(press("d"))
+	if len(wizardState.removing) != 1 {
+		t.Fatalf("removing = %v, want the key that was dropped", wizardState.removing)
+	}
+
+	adding := newEntryStep(wizardState, "")
+	adding.key = "DB_PASSWORD"
+	adding.typed = "rotated"
+	if err := adding.commit(); err != nil {
+		t.Fatalf("adding the key back failed: %v", err)
+	}
+
+	if len(wizardState.removing) != 0 {
+		t.Errorf("removing = %v, want nothing once the key was given a new value",
+			wizardState.removing)
+	}
+
+	sealed, err := sealFor(wizardState, certificateFor(key))
+	if err != nil {
+		t.Fatalf("sealing failed: %v", err)
+	}
+	if !strings.Contains(string(sealed), "DB_PASSWORD") {
+		t.Errorf("the key was dropped from the file anyway:\n%s", sealed)
+	}
+}
+
+func TestResizingTheTerminalReachesTheScreenBeingShown(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.sealed = []byte("kind: SealedSecret\n")
+	review := newReviewStep(wizardState)
+	review.Init()
+	application := &app{state: wizardState}
+	application.stack = []step{review}
+
+	application.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
+
+	if review.viewport.Width <= 76 {
+		t.Errorf("viewport width = %d, want it to follow the terminal", review.viewport.Width)
+	}
+	if review.viewport.Height <= 12 {
+		t.Errorf("viewport height = %d, want it to follow the terminal", review.viewport.Height)
+	}
+}
+
+func TestEditingAFileHasAControllerToFetchTheCertificateFrom(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+
+	wizardState := mergeState(t, key, existing)
+
+	if wizardState.controller != seal.DefaultController() {
+		t.Errorf("controller = %v, want the stock location; editing a file asks no "+
+			"further questions, so nothing else would set one", wizardState.controller)
 	}
 }

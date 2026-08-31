@@ -1,12 +1,14 @@
 package wizard
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
+	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
 // contextStep asks which cluster to seal for. Contexts are read from the local
@@ -63,6 +65,18 @@ type clusterOpenedMsg struct {
 	err        error
 }
 
+type controllersDiscoveredMsg struct {
+	controllers []seal.Controller
+	err         error
+}
+
+func discoverControllers(cluster Cluster) tea.Cmd {
+	return func() tea.Msg {
+		controllers, err := cluster.DiscoverControllers(context.Background())
+		return controllersDiscoveredMsg{controllers: controllers, err: err}
+	}
+}
+
 func (s *contextStep) Update(message tea.Msg) (step, tea.Cmd) {
 	switch typed := message.(type) {
 	case contextsLoadedMsg:
@@ -82,7 +96,10 @@ func (s *contextStep) Update(message tea.Msg) (step, tea.Cmd) {
 		s.state.contextName = s.chosen
 		s.state.connection = typed.connection
 		s.state.invalidate()
-		return afterCluster(s.state), nil
+		// Discovery starts as soon as there is a cluster to ask, so the certificate is
+		// usually ready by the time the review screen needs it. It runs on every path,
+		// including editing a file, where no further questions are asked.
+		return afterCluster(s.state), discoverControllers(typed.connection.Cluster)
 
 	case spinnerTickMsg:
 		if !s.opening {
