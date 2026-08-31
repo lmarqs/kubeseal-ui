@@ -32,10 +32,11 @@ type step interface {
 	Footer() string
 }
 
-// escapeHandler is implemented by steps that need Esc for a modal state of their
-// own. Returning true means the key was dealt with and no screen change follows.
+// escapeHandler is implemented by steps that ask more than one thing, so that Esc
+// undoes the last of them before it leaves the screen altogether. Returning true
+// means the key was dealt with and no screen change follows.
 type escapeHandler interface {
-	handleEscape() bool
+	handleEscape() (bool, tea.Cmd)
 }
 
 // app is the root model. It owns the frame around every screen, the keys that mean
@@ -121,10 +122,12 @@ func (a *app) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Interrupt
 		}
 		if typed.String() == "esc" {
-			// A step showing a confirmation claims Esc to dismiss it, since going back
-			// a screen would be the wrong thing to do with a question on screen.
-			if handler, ok := a.current().(escapeHandler); ok && handler.handleEscape() {
-				return a, nil
+			// A step with something of its own to undo claims Esc, since going back a
+			// screen would throw away more than the user asked to.
+			if handler, ok := a.current().(escapeHandler); ok {
+				if handled, cmd := handler.handleEscape(); handled {
+					return a, cmd
+				}
 			}
 			if a.canGoBack() {
 				return a, a.goBack()

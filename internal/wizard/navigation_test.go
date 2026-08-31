@@ -221,3 +221,86 @@ func TestTheMenuStillWorksAfterAnActionThatStaysOnTheScreen(t *testing.T) {
 		t.Fatal("the menu kept the submitted form")
 	}
 }
+
+func TestEscapeLeavesTheTypedNamespaceForTheList(t *testing.T) {
+	application := testApp(t, []string{"default", "payments"})
+	confirm(application) // cluster
+
+	current, ok := application.current().(*namespaceStep)
+	if !ok {
+		t.Fatalf("choosing a cluster led to %T, want the namespace question", application.current())
+	}
+
+	send(application, tea.KeyMsg{Type: tea.KeyDown})
+	send(application, tea.KeyMsg{Type: tea.KeyDown})
+	confirm(application) // ✎ type a namespace…
+
+	if !current.typing {
+		t.Fatal("choosing to type a namespace did not open the text field")
+	}
+
+	goBack(application)
+
+	if application.current() != step(current) {
+		t.Fatalf("esc left the screen for %T instead of returning to the list",
+			application.current())
+	}
+	if current.typing {
+		t.Fatal("esc did not return to the list of namespaces")
+	}
+	if body := current.View(); !strings.Contains(body, "payments") {
+		t.Fatalf("the list of namespaces did not come back:\n%q", body)
+	}
+}
+
+func TestEscapeLeavesTheValueForTheQuestionOfWhereItComesFrom(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	current := newEntryStep(wizardState, "")
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newEntriesStep(wizardState), current}
+	settle(application, current.Init())
+
+	confirm(application) // type it in
+
+	if current.valueForm == nil {
+		t.Fatal("choosing a source did not ask for the value")
+	}
+
+	goBack(application)
+
+	if application.current() != step(current) {
+		t.Fatalf("esc left the screen for %T instead of returning to the source",
+			application.current())
+	}
+	if current.valueForm != nil {
+		t.Fatal("esc did not return to the question of where the value comes from")
+	}
+	if body := current.View(); !strings.Contains(body, "read it from a file") {
+		t.Fatalf("the source question did not come back:\n%q", body)
+	}
+}
+
+func TestEscapeAbandonsTheQuestionOfWhereToSave(t *testing.T) {
+	application := actionsApp(t)
+	current := application.current().(*actionsStep)
+
+	send(application, tea.KeyMsg{Type: tea.KeyDown})
+	confirm(application) // save it to a file
+
+	if current.saveForm == nil {
+		t.Fatalf("choosing to save did not ask where:\n%q", current.View())
+	}
+
+	goBack(application)
+
+	if application.current() != step(current) {
+		t.Fatalf("esc left the screen for %T instead of returning to the menu",
+			application.current())
+	}
+	if current.saveForm != nil {
+		t.Fatal("esc did not abandon the question of where to save")
+	}
+	if body := current.View(); !strings.Contains(body, "print it and quit") {
+		t.Fatalf("the menu did not come back:\n%q", body)
+	}
+}

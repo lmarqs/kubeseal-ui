@@ -67,13 +67,18 @@ func (s *actionsStep) Footer() string {
 	}
 }
 
-// handleEscape dismisses a pending apply rather than leaving the screen.
-func (s *actionsStep) handleEscape() bool {
-	if s.plan == nil {
-		return false
+// handleEscape dismisses a pending apply, or abandons the question of where to
+// save, rather than leaving the screen.
+func (s *actionsStep) handleEscape() (bool, tea.Cmd) {
+	if s.plan != nil {
+		s.cancelApply()
+		return true, nil
 	}
-	s.cancelApply()
-	return true
+	if s.saveForm != nil {
+		s.saveForm = nil
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *actionsStep) cancelApply() {

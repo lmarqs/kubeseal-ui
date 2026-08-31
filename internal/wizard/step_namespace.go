@@ -55,6 +55,19 @@ func (s *namespaceStep) Footer() string {
 	}
 }
 
+// handleEscape leaves the text field for the list of namespaces, when there is a
+// list to go back to, rather than leaving the screen.
+func (s *namespaceStep) handleEscape() (bool, tea.Cmd) {
+	if !s.typing || !s.pickable {
+		return false, nil
+	}
+
+	s.typing = false
+	s.rebuild()
+
+	return true, s.form.Init()
+}
+
 func (s *namespaceStep) Init() tea.Cmd {
 	// A namespace given with --namespace needs no question, but the screen stays in
 	// the stack so it can be revisited.

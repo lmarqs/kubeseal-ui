@@ -32,8 +32,9 @@ It asks which cluster and namespace, what kind of secret this is, what it is
 called and how it should be scoped. Then it collects the values one at a time.
 You can type a value, read it from a file, or enter it over several lines. Values
 stay masked: the list shows the key, where the value came from and how large it
-is, and nothing else. `esc` goes back to any earlier question and keeps the
-entries you have already given.
+is, and nothing else. `esc` goes back — to the question before it on the same
+screen, then to any earlier question — and keeps the entries you have already
+given.
 
 Image pull secrets ask for a registry and credentials instead. TLS secrets ask
 for a certificate and a key, and `ksui` checks that the two match before it seals

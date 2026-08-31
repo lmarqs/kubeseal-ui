@@ -67,6 +67,20 @@ func (s *entryStep) Footer() string {
 	}
 }
 
+// handleEscape goes back to the question of where the value comes from, rather
+// than abandoning the entry because the wrong shape was chosen.
+func (s *entryStep) handleEscape() (bool, tea.Cmd) {
+	if s.valueForm == nil || s.finished {
+		return false, nil
+	}
+
+	s.valueForm = nil
+	s.failure = ""
+	s.sourceForm = nil
+
+	return true, s.Init()
+}
+
 func (s *entryStep) Init() tea.Cmd {
 	if s.valueForm != nil {
 		if spent(s.valueForm) {
