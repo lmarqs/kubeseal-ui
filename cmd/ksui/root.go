@@ -14,8 +14,8 @@ redirection works as expected:
 
   ksui --name db-creds --from-literal DB_PASSWORD=hunter2 > db-creds.yaml
 
-The interactive wizard is not available yet; describe the secret with flags for
-now.`
+Run it with no flags to be walked through the questions: which cluster and
+namespace, what the secret is called, then its values one at a time.`
 
 func newRootCommand() *cobra.Command {
 	opts := &options{}
@@ -32,7 +32,13 @@ func newRootCommand() *cobra.Command {
 			if opts.fetchCert {
 				return runFetchCert(cmd, opts)
 			}
-			return runSeal(cmd, opts)
+			// Flags that already describe a secret are taken at face value; the
+			// wizard only appears when there is something left to ask and a terminal
+			// to ask it on.
+			if opts.describesSecret() || !interactive(opts.ci) {
+				return runSeal(cmd, opts)
+			}
+			return runWizard(cmd, opts)
 		},
 	}
 

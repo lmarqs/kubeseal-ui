@@ -79,6 +79,15 @@ func (o *options) register(flags *pflag.FlagSet) {
 	flags.BoolVar(&o.ci, "ci", false, "never draw the wizard; report what is missing instead of asking")
 }
 
+// describesSecret reports whether the flags already say what to seal, in which
+// case there is nothing to ask about.
+func (o *options) describesSecret() bool {
+	if o.name == "" {
+		return false
+	}
+	return len(o.entries.literals) > 0 || len(o.entries.files) > 0 || o.allowEmptyData
+}
+
 // controller is the controller these options point at.
 func (o *options) controller() seal.Controller {
 	return seal.Controller{Namespace: o.controllerNamespace, Name: o.controllerName}
