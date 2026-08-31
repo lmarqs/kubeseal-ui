@@ -9,6 +9,9 @@ const (
 	SourceLiteral Source = iota
 	SourceFile
 	SourceEditor
+	// SourceGenerated marks a value the wizard built from answers, such as registry
+	// credentials, rather than one entered directly.
+	SourceGenerated
 	// SourceExisting marks a key already sealed in a file being merged into.
 	// Its value cannot be read back, only replaced.
 	SourceExisting
@@ -23,6 +26,8 @@ func (s Source) String() string {
 		return "file"
 	case SourceEditor:
 		return "editor"
+	case SourceGenerated:
+		return "generated"
 	case SourceExisting:
 		return "existing"
 	default:

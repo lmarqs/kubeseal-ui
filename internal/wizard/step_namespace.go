@@ -144,7 +144,7 @@ func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 		if s.typing {
 			chosen = s.typed
 		}
-		return newNameStep(s.state), s.accept(chosen)
+		return newTypeStep(s.state), s.accept(chosen)
 	}
 
 	return s, cmd

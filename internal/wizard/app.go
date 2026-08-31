@@ -175,6 +175,9 @@ func (a *app) breadcrumb() string {
 	if a.state.draft.Namespace != "" {
 		parts = append(parts, "namespace "+a.state.draft.Namespace)
 	}
+	if kind := describeType(a.state.draft.Type); kind != "" {
+		parts = append(parts, kind)
+	}
 	if a.state.draft.Name != "" {
 		parts = append(parts, "secret "+a.state.draft.Name.String())
 	}
@@ -215,6 +218,19 @@ func finish(outcome string) tea.Cmd {
 // finishPrinting ends the wizard and hands the sealed secret back for stdout.
 func finishPrinting() tea.Cmd {
 	return func() tea.Msg { return finishedMsg{outcome: "printed to stdout", print: true} }
+}
+
+// describeType names the kind of secret in the breadcrumb, saying nothing for the
+// generic kind since that is the unremarkable case.
+func describeType(kind secret.Type) string {
+	switch kind {
+	case secret.TypeDockerRegistry:
+		return "image pull secret"
+	case secret.TypeTLS:
+		return "TLS"
+	default:
+		return ""
+	}
 }
 
 func pluralise(count int, singular, plural string) string {

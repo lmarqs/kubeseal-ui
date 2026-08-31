@@ -4,6 +4,8 @@ import (
 	ssv1alpha1 "github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+
+	"github.com/lmarqs/kubeseal-ui/internal/secret"
 )
 
 // scopeStep asks how tightly the sealed secret should be bound to where it lives.
@@ -69,10 +71,23 @@ func (s *scopeStep) Update(message tea.Msg) (step, tea.Cmd) {
 		s.state.scope = s.chosen
 		s.state.scopeChosen = true
 		s.state.invalidate()
-		return newEntriesStep(s.state), nil
+		return contentsStep(s.state), nil
 	}
 
 	return s, cmd
+}
+
+// contentsStep is the screen that collects what goes in the secret, which depends
+// on the kind of secret being made.
+func contentsStep(state *state) step {
+	switch state.draft.Type {
+	case secret.TypeDockerRegistry:
+		return newDockerStep(state)
+	case secret.TypeTLS:
+		return newTLSStep(state)
+	default:
+		return newEntriesStep(state)
+	}
 }
 
 func (s *scopeStep) View() string {

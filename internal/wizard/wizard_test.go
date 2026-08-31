@@ -2,9 +2,16 @@ package wizard
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -857,4 +864,185 @@ func TestASuccessfulApplyEndsTheWizardSayingWhatHappened(t *testing.T) {
 	if !strings.Contains(message.outcome, "applied db-creds") {
 		t.Errorf("outcome = %q, want what was applied", message.outcome)
 	}
+}
+
+func TestTheKindOfSecretDecidesWhichContentsScreenFollows(t *testing.T) {
+	cases := map[secret.Type]any{
+		secret.TypeOpaque:         &entriesStep{},
+		secret.TypeDockerRegistry: &dockerStep{},
+		secret.TypeTLS:            &tlsStep{},
+	}
+
+	for kind, want := range cases {
+		wizardState := testState(t, testKey(t))
+		wizardState.draft.Type = kind
+
+		got := contentsStep(wizardState)
+
+		if fmt.Sprintf("%T", got) != fmt.Sprintf("%T", want) {
+			t.Errorf("kind %q led to %T, want %T", kind, got, want)
+		}
+	}
+}
+
+func TestChangingTheKindOfSecretDiscardsEntriesThatNoLongerFit(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	step := newTypeStep(wizardState)
+	step.Init()
+	step.chosen = secret.TypeTLS
+	step.form.State = huh.StateCompleted
+
+	next, _ := step.Update(nil)
+
+	if wizardState.draft.Entries.Len() != 0 {
+		t.Error("entries from the previous kind of secret were kept")
+	}
+	if wizardState.draft.Type != secret.TypeTLS {
+		t.Errorf("type = %q, want TLS", wizardState.draft.Type)
+	}
+	if _, ok := next.(*nameStep); !ok {
+		t.Errorf("choosing a kind led to %T, want the name question", next)
+	}
+}
+
+func TestChangingTheKindWarnsBeforeDiscardingAnything(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	step := newTypeStep(wizardState)
+	step.Init()
+	step.chosen = secret.TypeTLS
+
+	if !strings.Contains(step.View(), "discards the entries") {
+		t.Errorf("no warning was shown before discarding entries:\n%s", step.View())
+	}
+}
+
+func TestRegistryCredentialsBecomeTheOneEntryAPullSecretHolds(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.draft.Entries.Scrub()
+	wizardState.draft.Type = secret.TypeDockerRegistry
+	step := newDockerStep(wizardState)
+	step.Init()
+	step.auth = secret.DockerAuth{Server: secret.DefaultRegistry, Username: "robot", Password: "s3cret"}
+	step.form.State = huh.StateCompleted
+
+	next, _ := step.Update(nil)
+
+	if wizardState.draft.Entries.Len() != 1 {
+		t.Fatalf("entries = %d, want one", wizardState.draft.Entries.Len())
+	}
+	if !wizardState.draft.Entries.Has(secret.DockerConfigKey) {
+		t.Error("the credentials are not under .dockerconfigjson")
+	}
+	if _, ok := next.(*reviewStep); !ok {
+		t.Errorf("the registry form led to %T, want the review screen", next)
+	}
+}
+
+func TestIncompleteRegistryCredentialsKeepYouOnTheForm(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	step := newDockerStep(wizardState)
+	step.Init()
+	step.auth = secret.DockerAuth{Server: secret.DefaultRegistry}
+	step.form.State = huh.StateCompleted
+
+	next, _ := step.Update(nil)
+
+	if next != step {
+		t.Error("the wizard moved on with incomplete credentials")
+	}
+	if !strings.Contains(step.View(), "username is required") {
+		t.Errorf("the missing field was not named:\n%s", step.View())
+	}
+}
+
+func TestATLSPairIsReadFromFilesAndCheckedTogether(t *testing.T) {
+	certificate, key := writeTLSPair(t, time.Hour)
+	wizardState := testState(t, testKey(t))
+	wizardState.draft.Entries.Scrub()
+	wizardState.draft.Type = secret.TypeTLS
+	step := newTLSStep(wizardState)
+	step.Init()
+	step.certificatePath, step.keyPath = certificate, key
+	step.form.State = huh.StateCompleted
+
+	next, _ := step.Update(nil)
+
+	if wizardState.draft.Entries.Len() != 2 {
+		t.Fatalf("entries = %d, want the certificate and the key", wizardState.draft.Entries.Len())
+	}
+	if !strings.Contains(step.View(), "example.com") {
+		t.Errorf("the certificate was not described:\n%s", step.View())
+	}
+	if _, ok := next.(*reviewStep); !ok {
+		t.Errorf("the TLS form led to %T, want the review screen", next)
+	}
+}
+
+func TestAMismatchedTLSPairKeepsYouOnTheForm(t *testing.T) {
+	certificate, _ := writeTLSPair(t, time.Hour)
+	_, otherKey := writeTLSPair(t, time.Hour)
+	wizardState := testState(t, testKey(t))
+	step := newTLSStep(wizardState)
+	step.Init()
+	step.certificatePath, step.keyPath = certificate, otherKey
+	step.form.State = huh.StateCompleted
+
+	next, _ := step.Update(nil)
+
+	if next != step {
+		t.Error("the wizard moved on with a mismatched pair")
+	}
+	if !strings.Contains(step.View(), "do not match") {
+		t.Errorf("the mismatch was not explained:\n%s", step.View())
+	}
+}
+
+func TestAnAlreadyExpiredCertificateIsFlagged(t *testing.T) {
+	certificate, key := writeTLSPair(t, -time.Hour)
+	wizardState := testState(t, testKey(t))
+	step := newTLSStep(wizardState)
+	step.Init()
+	step.certificatePath, step.keyPath = certificate, key
+	step.form.State = huh.StateCompleted
+
+	step.Update(nil)
+
+	if !strings.Contains(step.View(), "already expired") {
+		t.Errorf("the expired certificate was not flagged:\n%s", step.View())
+	}
+}
+
+// writeTLSPair issues a self-signed pair and returns the paths they were written to.
+func writeTLSPair(t *testing.T, validFor time.Duration) (string, string) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "example.com"},
+		NotBefore:    time.Now().Add(-2 * time.Hour),
+		NotAfter:     time.Now().Add(validFor),
+		DNSNames:     []string{"example.com"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+
+	directory := t.TempDir()
+	certificatePath := filepath.Join(directory, "tls.crt")
+	keyPath := filepath.Join(directory, "tls.key")
+
+	write := func(path string, block *pem.Block) {
+		if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+			t.Fatalf("writing %s: %v", path, err)
+		}
+	}
+	write(certificatePath, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+	write(keyPath, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+
+	return certificatePath, keyPath
 }
