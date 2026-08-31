@@ -38,6 +38,17 @@ on: stderr and stdin both have to be terminals, `--ci` must not be passed, and
 `CI` must not be set in the environment. Fail any of those and missing input is a
 usage error instead, so scripted runs never block on a prompt.
 
+## Validation
+
+`--validate` seals first, then asks the controller whether it can decrypt the
+result. Exit 3 means it could not.
+
+It needs a controller to ask, so it is skipped — with a warning on stderr and
+exit 0 — when `--cert` supplied the certificate, or when the controller could not
+be reached and a cached certificate stood in for it. A run that exits 0 has
+therefore not necessarily been validated; the warning is what tells the two
+apart.
+
 ## Flags shared with kubeseal
 
 These keep kubeseal's names and meanings, so existing habits and scripts carry
@@ -72,4 +83,16 @@ ksui --name db-creds --from-file password=- < /run/secrets/password
 pass show db/password | ksui --name db-creds --from-file password=-
 ```
 
-Both `-` and `/dev/stdin` mean stdin.
+Both `-` and `/dev/stdin` mean stdin. Only one key may be read from it, since a
+second would silently get nothing; asking twice exits 2.
+
+## Merging
+
+`ksui merge <file>` takes a narrower set of flags, because the file supplies the
+name, namespace, type and sealing scope: `--from-literal` and `--from-file` add
+or replace keys, `--remove` drops them, and all three are repeatable. At least
+one is required, and a merge that would leave the file with no keys at all exits
+2.
+
+`--format` here defaults to neither `yaml` nor `json`. Left out, the file keeps
+the shape it already has.
