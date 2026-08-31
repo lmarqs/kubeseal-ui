@@ -23,12 +23,17 @@ each falls into one of the three kinds:
 | `internal/seal` | reason | sealing, sealing scope, which controller to seal for, obtaining certificates |
 | `internal/kube` | connection | kubeconfig, namespaces, controller discovery, applying manifests |
 | `internal/version` | connection | build metadata stamped in at link time |
+| `internal/wizard` | how it is run | the interactive terminal flow: one screen per question, and a stack that makes going back possible |
 | `cmd/ksui` | how it is run | flags, the I/O contract, wiring the above together |
 
 Dependencies point toward the reason. `internal/kube` depends on `internal/seal`
 for the `Controller` type; nothing in `internal/seal` or `internal/secret` depends
 on `internal/kube`. `cmd/ksui` depends on all of them and is the only place that
 picks which implementations get used.
+
+`internal/wizard` drives the sealing logic rather than containing it, and reaches
+a cluster only through the interfaces in its `ports.go`, which `cmd/ksui`
+satisfies with the `internal/kube` and `internal/seal` types.
 
 `Controller` lives with the sealing logic rather than with the Kubernetes code
 because which controller a secret is sealed for is a property of the secret: each
