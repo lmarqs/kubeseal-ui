@@ -7,9 +7,9 @@ module, so you do not need the `kubeseal` binary.
 
 ## Status
 
-Generic, image pull and TLS secrets all work, whether you answer the questions or
-pass flags. `ksui` can also check a sealed secret against the controller, apply
-it, and change files you already have.
+The wizard creates generic, image pull and TLS secrets. The flags create generic
+ones. `ksui` can also check a sealed secret against the controller, apply it, and
+change files you already have.
 
 ## Install
 
@@ -62,9 +62,12 @@ ksui --name db-creds -n payments --from-literal DB_PASSWORD=hunter2 > db-creds.y
 Read a value from a file, or pipe it in to keep it out of your shell history:
 
 ```sh
-ksui --name tls -n web --from-file tls.crt=./cert.pem --from-file tls.key=./key.pem
+ksui --name db-creds -n payments --from-file password=./password.txt
 pass show db/password | ksui --name db-creds -n payments --from-file password=-
 ```
+
+Secrets built from flags are `type: Opaque`. Image pull and TLS secrets — and the
+check that a certificate and its key belong together — come from the wizard.
 
 Check that the controller can actually decrypt the result before committing it:
 
