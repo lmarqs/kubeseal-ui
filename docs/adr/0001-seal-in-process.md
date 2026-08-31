@@ -8,30 +8,32 @@ Accepted
 
 ## Context
 
-Creating a SealedSecret requires encrypting a Kubernetes Secret with the public key
-of a sealed-secrets controller. The reference implementation is the `kubeseal` CLI.
-A wrapper could either shell out to that binary or import the same Go packages it
-uses.
+Creating a SealedSecret means encrypting a Kubernetes Secret with the public key
+of a sealed-secrets controller. The reference implementation is the `kubeseal`
+CLI. A wrapper can either shell out to that binary or import the same Go packages
+it uses.
 
-Shelling out guarantees byte-identical behaviour with whatever `kubeseal` version a
-user already has, but it makes the binary useless where `kubeseal` is absent, and it
-forces us to parse CLI output to distinguish failure modes we need to react to
-(controller unreachable, RBAC denied, validation failed).
+Shelling out guarantees identical behaviour with whatever `kubeseal` version a
+user already has. It also makes the binary useless wherever `kubeseal` is absent,
+and it forces us to read CLI output to tell apart the failures we need to react
+to: an unreachable controller, an RBAC denial, a secret the controller cannot
+decrypt.
 
 ## Decision
 
-Import `github.com/bitnami/sealed-secrets/pkg/kubeseal` and seal in-process.
+Import `github.com/bitnami/sealed-secrets` and seal in-process.
 
-Secrets are built as `corev1.Secret` values and passed to `kubeseal.Seal`, the same
-entry point the `kubeseal` CLI uses, so sealing scope annotations and template
-propagation behave identically. `kubeseal.EncryptSecretItem` is reserved for
-replacing individual keys when merging into an existing file.
+Secrets are built as `corev1.Secret` values in memory and encrypted with the same
+code the `kubeseal` CLI runs, so sealing scope annotations and template
+propagation behave the same way. ADR 4 records which entry point into that code
+we ended up calling, and why.
 
 ## Consequences
 
-- `ksui` is a single self-contained binary with no external runtime dependency.
-- Errors arrive as Go values, so the wizard can react to each failure mode precisely.
+- `ksui` is one self-contained binary with nothing to install alongside it.
+- Failures arrive as Go values, so the wizard can respond to each one differently
+  instead of matching strings.
 - We inherit the sealed-secrets module's Kubernetes dependency versions and its
-  minimum Go toolchain, and must track them when upgrading.
-- Sealing logic is unit-testable without a cluster: generate an RSA key, seal, and
-  decrypt with `pkg/crypto`.
+  minimum Go toolchain, and have to track both when upgrading.
+- Sealing is unit-testable with no cluster: generate an RSA key, seal, then
+  decrypt with `pkg/crypto` and compare.

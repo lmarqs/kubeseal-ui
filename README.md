@@ -2,13 +2,14 @@
 
 A friendly terminal tool for creating [Bitnami SealedSecrets](https://github.com/bitnami/sealed-secrets).
 
-The binary is called `ksui`. Sealing happens **in-process** using the sealed-secrets
-Go module, so the `kubeseal` binary is not required.
+The binary is called `ksui`. It seals in-process using the sealed-secrets Go
+module, so you do not need the `kubeseal` binary.
 
 ## Status
 
-Working: generic, image pull and TLS secrets, created interactively or from the
-command line, validated, applied, and merged into files that already exist.
+Generic, image pull and TLS secrets all work, whether you answer the questions or
+pass flags. `ksui` can also check a sealed secret against the controller, apply
+it, and change files you already have.
 
 ## Install
 
@@ -28,17 +29,20 @@ ksui
 ```
 
 It asks which cluster and namespace, what kind of secret this is, what it is
-called and how it should be scoped, then collects the values one at a time — each of which can be typed,
-read from a file, or entered over several lines. Values are masked and listed only
-by key, where they came from and how large they are. `esc` goes back to any earlier
-question without losing the entries already given.
+called and how it should be scoped. Then it collects the values one at a time.
+You can type a value, read it from a file, or enter it over several lines. Values
+stay masked: the list shows the key, where the value came from and how large it
+is, and nothing else. `esc` goes back to any earlier question and keeps the
+entries you have already given.
 
-Image pull secrets ask for a registry and credentials instead, and TLS secrets for
-a certificate and key, whose pair is checked before anything is sealed.
+Image pull secrets ask for a registry and credentials instead. TLS secrets ask
+for a certificate and a key, and `ksui` checks that the two match before it seals
+anything.
 
-Once sealed, the manifest is shown in full and you can check that the controller
-can decrypt it, apply it to the cluster, save it, or print it. Applying says which
-keys it would add, replace and remove before it touches anything.
+Once sealed, you see the whole manifest. From there you can check that the
+controller can decrypt it, apply it to the cluster, save it, or print it.
+Applying tells you which keys it would add, replace and remove before it touches
+the cluster.
 
 ### From the command line
 
@@ -77,16 +81,16 @@ ksui --cert controller.pem --name db-creds -n payments --from-literal a=b
 
 ### Changing a sealed secret you already have
 
-Values that are already sealed cannot be read back, but keys can be given new
-values or removed:
+You cannot read a sealed value back, but you can give a key a new value or drop
+it:
 
 ```sh
 ksui merge db-creds-sealed.yaml                          # walk through the keys
 ksui merge db-creds-sealed.yaml --from-literal DB_PASSWORD=rotated --remove OLD_TOKEN
 ```
 
-The file's name, namespace and scope are kept as they are, since changing them
-would make the values already in it unreadable.
+The file keeps its name, namespace and scope. Changing any of them would make the
+values already in it unreadable.
 
 ### Sealing scope
 
@@ -96,12 +100,12 @@ binds it to the namespace only, and `--scope cluster-wide` to neither.
 
 ### Certificates
 
-The controller's certificate is cached under your user cache directory, keyed by
-cluster and by controller, so a cluster running several controllers never seals
-against the wrong key pair. A cached certificate is reused for an hour. If the
-controller cannot be reached, the cached copy is used and a warning says so.
+`ksui` caches the controller's certificate under your user cache directory, keyed
+by cluster and by controller, so a cluster running several controllers never
+seals against the wrong key pair. It reuses a cached certificate for an hour. If
+it cannot reach the controller, it falls back to the cached copy and warns you.
 
-Full details of channels, exit codes and flag compatibility are in
+For the channels, exit codes and flag compatibility, see
 [docs/reference/cli-io-contract.md](docs/reference/cli-io-contract.md).
 
 ## Development
@@ -116,7 +120,7 @@ mise run check     # go vet, golangci-lint, goreleaser check
 mise run fmt       # format sources and tidy go.mod
 ```
 
-Design decisions are recorded in [docs/adr](docs/adr).
+The ADRs in [docs/adr](docs/adr) record the design decisions.
 
 ## License
 

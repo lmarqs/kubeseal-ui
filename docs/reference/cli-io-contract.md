@@ -1,6 +1,6 @@
 # CLI I/O contract
 
-`ksui` is meant to compose with other tools, so what goes where is fixed.
+`ksui` composes with other tools, so what goes where does not change.
 
 ## Channels
 
@@ -9,11 +9,11 @@
 | stdout | the sealed secret, and nothing else |
 | stderr | warnings, progress, validation results, and the interactive wizard |
 
-`ksui ... > sealed.yaml` therefore yields a file containing only the manifest, and
-`ksui ... 2>/dev/null` discards every diagnostic without touching the data.
+So `ksui ... > sealed.yaml` gives you a file holding only the manifest, and
+`ksui ... 2>/dev/null` throws away every diagnostic while leaving the data alone.
 
-When `--sealed-secret-file` (`-w`) is given, the manifest goes to that file and
-stdout stays empty.
+Pass `--sealed-secret-file` (`-w`) and the manifest goes to that file instead.
+stdout then stays empty.
 
 ## Exit codes
 
@@ -25,10 +25,10 @@ stdout stays empty.
 | 3 | the controller could not decrypt the sealed secret (`--validate`) |
 | 130 | interrupted |
 
-Anything the caller has to fix on the command line exits 2, including unknown
-flags, an invalid secret key, a missing `--name`, and a secret with no entries.
-Every such failure names what is wrong and prints a `hint:` line suggesting the
-fix. Missing input is never prompted for.
+Anything you have to fix on the command line exits 2: an unknown flag, an invalid
+secret key, a missing `--name`, a secret with no entries. Each of those says what
+is wrong and prints a `hint:` line with the fix. `ksui` never prompts for input it
+is missing.
 
 ## Flags shared with kubeseal
 
@@ -39,14 +39,14 @@ over: `--cert`, `--controller-name`, `--controller-namespace`, `--scope`,
 `-w`/`--sealed-secret-file` (the output *path*).
 
 One deliberate difference: `--format` defaults to `yaml` rather than kubeseal's
-`json`, because the output is usually committed to a repository.
+`json`, because the output usually ends up committed to a repository.
 
 Flags kubeseal does not define: `--ci`, `--context`, `--from-literal`, and
 `-n`/`--namespace`, the last two following kubectl's naming.
 
 ## Keeping values out of shell history
 
-`--from-literal` puts the value on the command line, where the shell records it.
+`--from-literal` puts the value on the command line, where your shell records it.
 To avoid that, read it from a file or pipe it in:
 
 ```sh
@@ -54,4 +54,4 @@ ksui --name db-creds --from-file password=- < /run/secrets/password
 pass show db/password | ksui --name db-creds --from-file password=-
 ```
 
-`-` and `/dev/stdin` both mean stdin.
+Both `-` and `/dev/stdin` mean stdin.

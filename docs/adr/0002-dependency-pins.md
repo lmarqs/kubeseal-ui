@@ -8,11 +8,12 @@ Accepted
 
 ## Context
 
-The two dependency families this project rests on — sealed-secrets and the Charm TUI
-stack — each carry constraints that could conflict. Before building features on top
-of them, a single build was used to confirm they coexist.
+This project rests on two dependency families, sealed-secrets and the Charm TUI
+stack, and each carries constraints that could conflict with the other. Before
+building anything on top of them, one program that imported both confirmed they
+compile together.
 
-Findings from that build:
+That build turned up the following:
 
 - The sealed-secrets Go module was renamed. Releases up to v0.37.0 declare
   `github.com/bitnami-labs/sealed-secrets`; v0.38.0 and later declare
@@ -21,11 +22,10 @@ Findings from that build:
 - sealed-secrets v0.39.1 requires Go >= 1.26.7 and builds against Kubernetes
   libraries at v0.36.x.
 - `clientcmd.ClientConfig` structurally satisfies `kubeseal.ClientConfig`, so the
-  deferred-loading client configuration can be handed to the sealing functions
-  directly.
+  deferred-loading client configuration can go straight to the sealing functions.
 - `huh` v1.0.0 requires the Bubble Tea v1 line, and compiles cleanly against
-  `bubbles` v1.0.0 despite pinning an earlier pseudo-version itself.
-- The resulting binary is roughly 35 MB, dominated by client-go.
+  `bubbles` v1.0.0 even though it pins an earlier pseudo-version itself.
+- The resulting binary is roughly 35 MB, most of it client-go.
 
 ## Decision
 
@@ -42,7 +42,7 @@ Pin:
 
 - Upgrading sealed-secrets means re-checking the Kubernetes library pins and the Go
   toolchain floor together.
-- Bubble Tea v2 is deliberately out of scope while `huh` requires v1.
-- Kubernetes libraries are held one minor version behind their latest release on
-  purpose; the pin exists to match sealed-secrets, not because newer versions are
-  known to break.
+- Bubble Tea v2 stays out of scope for as long as `huh` requires v1.
+- The Kubernetes libraries sit one minor version behind their latest release on
+  purpose. The pin exists to match sealed-secrets, not because anything is known
+  to break in newer versions.
