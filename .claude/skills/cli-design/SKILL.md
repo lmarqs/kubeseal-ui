@@ -115,11 +115,11 @@ outcome a script can branch on:
 
 | Code | Meaning | When |
 |------|---------|------|
-| `0` | Success | The secret was sealed, or the wizard was left without sealing |
+| `0` | Success | The secret was sealed, or the wizard was left through one of its own actions |
 | `1` | Error | A runtime failure: unreachable controller, RBAC denial, unwritable path |
 | `2` | Usage | The command line needs changing: unknown flag, missing `--name`, no entries |
 | `3` | Validation failed | The controller could not decrypt the result (`--validate`) |
-| `130` | Interrupted | A signal cancelled an operation in flight (128 + SIGINT) |
+| `130` | Interrupted | A signal, or Ctrl+C in the wizard, ended the run (128 + SIGINT) |
 
 Rules:
 - Separate "you must fix the command line" from "the world did not cooperate".

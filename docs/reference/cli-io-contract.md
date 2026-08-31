@@ -20,15 +20,17 @@ stdout stays empty too.
 
 | Code | Meaning |
 |---|---|
-| 0 | the secret was sealed, or the wizard was left without sealing anything |
+| 0 | the secret was sealed, or the wizard was left through one of its own actions without sealing anything |
 | 1 | something failed at runtime, such as an unreachable controller |
 | 2 | the command line was wrong or incomplete |
 | 3 | the controller could not decrypt the sealed secret (`--validate`) |
-| 130 | a signal arrived while an operation was in flight and cancelled it |
+| 130 | the run was interrupted: a signal arrived, or Ctrl+C left the wizard |
 
 Anything you have to fix on the command line exits 2: an unknown flag, an invalid
 secret key, a missing `--name`, a secret with no entries. Each of those says what
 is wrong and prints a `hint:` line with the fix.
+
+An interrupt is reported by the exit code alone, since it is what you asked for.
 
 ## When ksui asks and when it does not
 
