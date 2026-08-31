@@ -1,41 +1,46 @@
 ---
 name: cli-design
-description: This skill should be used when designing CLI commands, flag conventions, output formats, I/O channel allocation, exit code semantics, pipe ergonomics, or non-interactive modes. Activates on mentions of CLI design, command interface, stdout/stderr contract, flag handling, JSON output, pipe-safe output, exit codes, spinner behavior, --ci mode, non-interactive fallback, or terraform CLI compatibility.
+description: This skill should be used when designing CLI commands, flag conventions, output formats, I/O channel allocation, exit code semantics, pipe ergonomics, or non-interactive modes. Activates on mentions of CLI design, command interface, stdout/stderr contract, flag handling, output format, pipe-safe output, exit codes, spinner behavior, --ci mode, non-interactive fallback, or kubeseal flag compatibility.
 ---
 
 # CLI Design System
 
-Design patterns for building CLI tools that compose well in Unix pipelines, respect terminal conventions, and provide excellent developer experience. Focused on tools that wrap or extend existing CLIs (like terraform).
+Design patterns for building CLI tools that compose well in Unix pipelines, respect terminal conventions, and provide excellent developer experience. Focused on tools that offer a familiar surface over an existing tool's job, as `ksui` does for `kubeseal`.
 
 **Core philosophy:** A CLI earns trust by being predictable. Data flows through stdout, progress through stderr, flags work like the tools users already know, and scripts never break when upgrading.
 
 ## CLI Design Process
 
 ```
-1. What operation? → Map to existing conventions (terraform, git, kubectl)
+1. What operation? → Map to existing conventions (kubeseal, kubectl, git)
 2. What output?   → Choose channel + format per mode (human/json/ci)
-3. What flags?    → Inherit from wrapped tool, add novel ones without collision
+3. What flags?    → Inherit from the reference tool, add novel ones without collision
 4. What errors?   → Actionable messages with hints, correct exit codes
 5. Validate       → Test in pipes, CI, interactive terminal, non-TTY
 ```
 
 ---
 
-## 1. The Superset Principle
+## 1. The Familiar-Surface Principle
 
-When wrapping an existing CLI (terraform, kubectl, docker):
+A tool that does the same job as an established CLI should be answerable with the
+habits and scripts users already have, whether or not it runs that CLI. `ksui`
+seals in-process rather than shelling out, so the compatibility it offers is a
+matter of deliberate flag naming, not inheritance.
 
 | Layer | Strategy | Example |
 |-------|----------|---------|
-| **Preserve** | Identical behavior for existing flags/output | `-json` produces same bytes |
-| **Replace** | Better human-readable defaults (same channel) | Tree view instead of terraform's wall of text |
-| **Add** | Novel commands/flags using unclaimed names | `--ci`, `risk`, `phantom` |
+| **Preserve** | Same name, same meaning as the reference tool | `--cert`, `--scope`, `-w`, `--fetch-cert` |
+| **Diverge** | Better default, documented as a difference | `--format` defaults to `yaml`, not `json` |
+| **Add** | Novel flags using unclaimed names | `--ci`, `--from-literal` |
 
 **Rules:**
-- Same flag must never mean different things between original and wrapper
-- Machine-readable formats (`-json`) are byte-for-byte compatible
-- Human-readable output may improve, but same channel (stdout)
-- Novel additions use names the wrapped tool hasn't claimed
+- A shared name must never carry a different meaning without being documented as
+  such. `ksui --namespace` names the namespace the secret is sealed for, where
+  kubeseal binds it as a kubeconfig override — so the contract says so outright.
+- Divergent defaults are chosen for the common case and recorded, never silent.
+- Novel additions use names the reference tool hasn't claimed.
+- The whole comparison lives in one place: `docs/reference/cli-io-contract.md`.
 
 ---
 
