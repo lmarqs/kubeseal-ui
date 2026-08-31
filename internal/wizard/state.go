@@ -30,10 +30,28 @@ type state struct {
 	// it was produced and it must be sealed again.
 	sealed []byte
 
+	// removing are keys to drop from the file being merged into.
+	removing []string
+
 	// outcome describes what the wizard ended up doing, reported once it exits.
 	outcome string
 	// printToStdout asks the caller to write the sealed secret to stdout.
 	printToStdout bool
+}
+
+// merging reports whether an existing file is being edited.
+func (s *state) merging() bool {
+	return s.options.Merge != nil
+}
+
+// markForRemoval records that a key already sealed in the file should go.
+func (s *state) markForRemoval(key string) {
+	for _, existing := range s.removing {
+		if existing == key {
+			return
+		}
+	}
+	s.removing = append(s.removing, key)
 }
 
 // invalidate marks the sealed secret as out of date, which makes the review step

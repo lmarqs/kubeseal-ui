@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
 	"github.com/lmarqs/kubeseal-ui/internal/secret"
 )
@@ -26,7 +28,12 @@ func newReviewStep(state *state) *reviewStep {
 	return &reviewStep{state: state, spinner: newSpinner()}
 }
 
-func (s *reviewStep) Heading() string { return "Ready to seal" }
+func (s *reviewStep) Heading() string {
+	if s.state.merging() {
+		return "Ready to update " + s.state.options.Merge.Path
+	}
+	return "Ready to seal"
+}
 
 func (s *reviewStep) Footer() string {
 	if !s.ready {
@@ -61,24 +68,66 @@ func (s *reviewStep) sealNow() tea.Cmd {
 	wizardState := s.state
 
 	return func() tea.Msg {
-		built, err := secret.Build(wizardState.draft)
-		if err != nil {
-			return sealedMsg{err: err}
-		}
-
 		certificate, err := wizardState.connection.Certificates.Resolve(context.Background(), wizardState.controller)
 		if err != nil {
 			return sealedMsg{err: err}
 		}
 
-		sealed, err := seal.NewSealer(certificate.PublicKey).
-			Seal(built, wizardState.scope, seal.FormatYAML)
+		sealed, err := sealFor(wizardState, certificate)
 		if err != nil {
 			return sealedMsg{err: err}
 		}
 
 		return sealedMsg{sealed: sealed, certificate: certificate}
 	}
+}
+
+// sealFor produces the manifest to show: a whole new sealed secret, or the merged
+// contents of the file being edited.
+func sealFor(wizardState *state, certificate seal.Certificate) ([]byte, error) {
+	sealer := seal.NewSealer(certificate.PublicKey)
+
+	if !wizardState.merging() {
+		built, err := secret.Build(wizardState.draft)
+		if err != nil {
+			return nil, err
+		}
+		return sealer.Seal(built, wizardState.scope, seal.FormatYAML)
+	}
+
+	incoming, err := incomingFor(wizardState)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := sealer.Merge(*wizardState.options.Merge, incoming, wizardState.removing, seal.FormatYAML)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.Sealed, nil
+}
+
+// incomingFor builds a secret from the entries that carry a value, leaving out
+// those standing in for values already sealed.
+func incomingFor(wizardState *state) (*corev1.Secret, error) {
+	draft := secret.Draft{
+		Namespace:  wizardState.draft.Namespace,
+		Name:       wizardState.draft.Name,
+		Type:       wizardState.draft.Type,
+		AllowEmpty: true,
+	}
+
+	for _, entry := range wizardState.draft.Entries.All() {
+		if entry.Source != secret.SourceExisting {
+			draft.Entries.Set(entry)
+		}
+	}
+	if draft.Entries.Len() == 0 {
+		return nil, nil
+	}
+
+	return secret.Build(draft)
 }
 
 func (s *reviewStep) Update(message tea.Msg) (step, tea.Cmd) {

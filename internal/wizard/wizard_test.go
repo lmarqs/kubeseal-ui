@@ -20,6 +20,8 @@ import (
 	"github.com/bitnami/sealed-secrets/pkg/crypto"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
@@ -1045,4 +1047,196 @@ func writeTLSPair(t *testing.T, validFor time.Duration) (string, string) {
 	write(keyPath, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
 
 	return certificatePath, keyPath
+}
+
+// existingFile writes a sealed secret and reads it back as the wizard would.
+func existingFile(t *testing.T, key *rsa.PrivateKey, values map[string][]byte) *seal.Existing {
+	t.Helper()
+
+	built := &corev1.Secret{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "db-creds"},
+		Type:       corev1.SecretTypeOpaque,
+		Data:       values,
+	}
+	rendered, err := seal.NewSealer(&key.PublicKey).
+		Seal(built, ssv1alpha1.NamespaceWideScope, seal.FormatYAML)
+	if err != nil {
+		t.Fatalf("sealing the starting file: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "db-creds-sealed.yaml")
+	if err := os.WriteFile(path, rendered, 0o600); err != nil {
+		t.Fatalf("writing the starting file: %v", err)
+	}
+
+	existing, err := seal.ReadExisting(path)
+	if err != nil {
+		t.Fatalf("ReadExisting: %v", err)
+	}
+
+	return &existing
+}
+
+// mergeState builds a wizard editing an existing file, already connected.
+func mergeState(t *testing.T, key *rsa.PrivateKey, existing *seal.Existing) *state {
+	t.Helper()
+
+	application := newApp(Options{
+		Merge:             existing,
+		DefaultOutputPath: func(name string) string { return "./" + name + "-sealed.yaml" },
+	})
+	application.state.connection = Connection{
+		Cluster:      &fakeCluster{},
+		Certificates: fakeCertificates{certificate: certificateFor(key)},
+	}
+	application.state.controller = seal.DefaultController()
+
+	return application.state
+}
+
+func TestEditingAFileTakesItsIdentityScopeAndKeys(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+
+	wizardState := mergeState(t, key, existing)
+
+	if wizardState.draft.Name.String() != "db-creds" || wizardState.draft.Namespace != "payments" {
+		t.Errorf("identity = %s/%s, want the file's own",
+			wizardState.draft.Namespace, wizardState.draft.Name)
+	}
+	if wizardState.scope != ssv1alpha1.NamespaceWideScope || !wizardState.scopeChosen {
+		t.Errorf("scope = %v, want the file's own, already settled", wizardState.scope)
+	}
+	entry, found := wizardState.draft.Entries.Get("DB_PASSWORD")
+	if !found {
+		t.Fatal("the key already in the file is not listed")
+	}
+	if entry.Source != secret.SourceExisting {
+		t.Errorf("source = %v, want it marked as already sealed", entry.Source)
+	}
+}
+
+func TestEditingAFileSkipsTheQuestionsTheFileAlreadyAnswers(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+	wizardState := mergeState(t, key, existing)
+
+	next := afterCluster(wizardState)
+
+	if _, ok := next.(*entriesStep); !ok {
+		t.Errorf("after choosing a cluster the wizard went to %T, want the keys screen", next)
+	}
+}
+
+func TestAnAlreadySealedValueIsShownAsUnreadable(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+	step := newEntriesStep(mergeState(t, key, existing))
+
+	view := step.View()
+
+	if !strings.Contains(view, "already sealed") {
+		t.Errorf("the entry is not marked as already sealed:\n%s", view)
+	}
+	if !strings.Contains(view, "cannot be shown") {
+		t.Errorf("the screen does not explain that values cannot be read back:\n%s", view)
+	}
+	if strings.Contains(view, "hunter2") {
+		t.Errorf("the screen leaks a value:\n%s", view)
+	}
+}
+
+func TestEditingAFileWithoutChangingAnythingIsRefused(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+	step := newEntriesStep(mergeState(t, key, existing))
+
+	next, _ := step.Update(press("enter"))
+
+	if next != step {
+		t.Error("the wizard moved on although nothing had changed")
+	}
+	if !strings.Contains(step.View(), "nothing has changed") {
+		t.Errorf("no explanation was shown:\n%s", step.View())
+	}
+}
+
+func TestRemovingAnAlreadySealedKeyRecordsItForRemoval(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{
+		"DB_PASSWORD": []byte("hunter2"), "OLD_TOKEN": []byte("stale"),
+	})
+	wizardState := mergeState(t, key, existing)
+	step := newEntriesStep(wizardState)
+
+	step.Update(press("d"))
+	step.Update(press("d"))
+
+	if len(wizardState.removing) != 1 {
+		t.Fatalf("removing = %v, want one key", wizardState.removing)
+	}
+	if wizardState.removing[0] != "DB_PASSWORD" {
+		t.Errorf("removing = %v, want the key that was selected", wizardState.removing)
+	}
+}
+
+func TestMergingProducesAFileThatStillDecryptsTheUntouchedValues(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+	wizardState := mergeState(t, key, existing)
+	wizardState.draft.Entries.Set(entry(t, "API_TOKEN", "t0ken"))
+	step := newReviewStep(wizardState)
+
+	message, ok := step.sealNow()().(sealedMsg)
+	if !ok {
+		t.Fatal("sealing did not report a result")
+	}
+	if message.err != nil {
+		t.Fatalf("merging failed: %v", message.err)
+	}
+
+	merged := string(message.sealed)
+	for _, want := range []string{"DB_PASSWORD", "API_TOKEN"} {
+		if !strings.Contains(merged, want) {
+			t.Errorf("the merged file is missing %q:\n%s", want, merged)
+		}
+	}
+	for _, plaintext := range []string{"hunter2", "t0ken"} {
+		if strings.Contains(merged, plaintext) {
+			t.Errorf("the merged file leaks %q:\n%s", plaintext, merged)
+		}
+	}
+}
+
+func TestRemovingEveryKeyWhileEditingIsReportedRatherThanWritten(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"ONLY": []byte("value")})
+	wizardState := mergeState(t, key, existing)
+	wizardState.draft.Entries.Remove("ONLY")
+	wizardState.markForRemoval("ONLY")
+	step := newReviewStep(wizardState)
+
+	step.Update(step.sealNow()())
+
+	if step.failure == nil {
+		t.Fatal("removing every key was not reported as a problem")
+	}
+	if !strings.Contains(step.View(), "remove every key") {
+		t.Errorf("the reason was not explained:\n%s", step.View())
+	}
+}
+
+func TestSavingWhileEditingOffersTheFileBeingEdited(t *testing.T) {
+	key := testKey(t)
+	existing := existingFile(t, key, map[string][]byte{"DB_PASSWORD": []byte("hunter2")})
+	wizardState := mergeState(t, key, existing)
+	step := newActionsStep(wizardState)
+
+	if got := step.defaultSavePath(); got != existing.Path {
+		t.Errorf("default save path = %q, want the file being edited %q", got, existing.Path)
+	}
+	if !strings.Contains(step.saveLabel(), existing.Path) {
+		t.Errorf("the save action does not name the file: %q", step.saveLabel())
+	}
 }

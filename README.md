@@ -7,9 +7,8 @@ Go module, so the `kubeseal` binary is not required.
 
 ## Status
 
-Working for Opaque secrets, interactively and from the command line. Still to
-come: guided flows for docker-registry and TLS secrets, and merging new values
-into an existing sealed secret file.
+Working: generic, image pull and TLS secrets, created interactively or from the
+command line, validated, applied, and merged into files that already exist.
 
 ## Install
 
@@ -28,14 +27,18 @@ Run it with no arguments to be walked through the questions:
 ksui
 ```
 
-It asks which cluster and namespace, what the secret is called and how it should
-be scoped, then collects the values one at a time — each of which can be typed,
+It asks which cluster and namespace, what kind of secret this is, what it is
+called and how it should be scoped, then collects the values one at a time — each of which can be typed,
 read from a file, or entered over several lines. Values are masked and listed only
 by key, where they came from and how large they are. `esc` goes back to any earlier
 question without losing the entries already given.
 
+Image pull secrets ask for a registry and credentials instead, and TLS secrets for
+a certificate and key, whose pair is checked before anything is sealed.
+
 Once sealed, the manifest is shown in full and you can check that the controller
-can decrypt it, apply it to the cluster, save it, or print it.
+can decrypt it, apply it to the cluster, save it, or print it. Applying says which
+keys it would add, replace and remove before it touches anything.
 
 ### From the command line
 
@@ -71,6 +74,19 @@ Seal with no cluster access at all, using a certificate you saved earlier:
 ksui --fetch-cert > controller.pem          # once, while you have access
 ksui --cert controller.pem --name db-creds -n payments --from-literal a=b
 ```
+
+### Changing a sealed secret you already have
+
+Values that are already sealed cannot be read back, but keys can be given new
+values or removed:
+
+```sh
+ksui merge db-creds-sealed.yaml                          # walk through the keys
+ksui merge db-creds-sealed.yaml --from-literal DB_PASSWORD=rotated --remove OLD_TOKEN
+```
+
+The file's name, namespace and scope are kept as they are, since changing them
+would make the values already in it unreadable.
 
 ### Sealing scope
 

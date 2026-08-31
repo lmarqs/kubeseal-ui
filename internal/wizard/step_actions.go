@@ -106,12 +106,20 @@ func (s *actionsStep) choices() []huh.Option[action] {
 		options = append(options, huh.NewOption("apply it to the cluster", actionApply))
 	}
 	options = append(options,
-		huh.NewOption("save it to a file", actionSave),
+		huh.NewOption(s.saveLabel(), actionSave),
 		huh.NewOption("print it and quit", actionPrint),
 		huh.NewOption("quit without saving", actionQuit),
 	)
 
 	return options
+}
+
+// saveLabel names the save action after what it actually does.
+func (s *actionsStep) saveLabel() string {
+	if s.state.merging() {
+		return "write it back to " + s.state.options.Merge.Path
+	}
+	return "save it to a file"
 }
 
 // canValidate reports whether asking the controller is possible at all.
@@ -296,7 +304,7 @@ func (s *actionsStep) updateSave(message tea.Msg) (step, tea.Cmd) {
 
 func (s *actionsStep) askWhereToSave() {
 	if s.savePath == "" {
-		s.savePath = s.state.options.DefaultOutputPath(s.state.draft.Name.String())
+		s.savePath = s.defaultSavePath()
 	}
 
 	s.saveForm = huh.NewForm(huh.NewGroup(
@@ -304,6 +312,14 @@ func (s *actionsStep) askWhereToSave() {
 			Title("Where should it be written?").
 			Value(&s.savePath),
 	)).WithShowHelp(false).WithShowErrors(true)
+}
+
+// defaultSavePath offers the file being edited, or a name derived from the secret.
+func (s *actionsStep) defaultSavePath() string {
+	if s.state.merging() {
+		return s.state.options.Merge.Path
+	}
+	return s.state.options.DefaultOutputPath(s.state.draft.Name.String())
 }
 
 func (s *actionsStep) validate() tea.Cmd {

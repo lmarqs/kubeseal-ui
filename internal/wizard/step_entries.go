@@ -27,7 +27,12 @@ func newEntriesStep(state *state) *entriesStep {
 	return &entriesStep{state: state}
 }
 
-func (s *entriesStep) Heading() string { return "What goes in the secret?" }
+func (s *entriesStep) Heading() string {
+	if s.state.merging() {
+		return "What should change in " + s.state.options.Merge.Path + "?"
+	}
+	return "What goes in the secret?"
+}
 
 func (s *entriesStep) Footer() string {
 	keys := "a add"
@@ -75,14 +80,43 @@ func (s *entriesStep) Update(message tea.Msg) (step, tea.Cmd) {
 		s.move(1)
 
 	case "enter":
-		if s.state.draft.Entries.Len() == 0 {
-			s.notice = markWarning + " add at least one entry first"
+		if !s.readyToSeal() {
 			return s, nil
 		}
 		return newReviewStep(s.state), nil
 	}
 
 	return s, nil
+}
+
+// readyToSeal reports whether there is anything worth sealing yet, explaining what
+// is missing when there is not.
+func (s *entriesStep) readyToSeal() bool {
+	if s.state.merging() {
+		if len(s.state.removing) == 0 && !s.hasNewValues() {
+			s.notice = markWarning + " nothing has changed yet"
+			return false
+		}
+		return true
+	}
+
+	if s.state.draft.Entries.Len() == 0 {
+		s.notice = markWarning + " add at least one entry first"
+		return false
+	}
+
+	return true
+}
+
+// hasNewValues reports whether any entry carries a value to seal, as opposed to
+// standing in for one already sealed in the file.
+func (s *entriesStep) hasNewValues() bool {
+	for _, entry := range s.state.draft.Entries.All() {
+		if entry.Source != secret.SourceExisting {
+			return true
+		}
+	}
+	return false
 }
 
 // remove drops the selected entry, asking for confirmation first because the value
@@ -99,6 +133,9 @@ func (s *entriesStep) remove() {
 		return
 	}
 
+	if entry.Source == secret.SourceExisting {
+		s.state.markForRemoval(entry.Key.String())
+	}
 	s.state.draft.Entries.Remove(entry.Key)
 	s.state.invalidate()
 	s.confirmingRemoval = ""
@@ -150,13 +187,22 @@ func (s *entriesStep) View() string {
 	}
 
 	rows = append(rows, "")
-	rows = append(rows, mutedStyle.Render("Values stay masked and are never written to disk unencrypted."))
+	rows = append(rows, mutedStyle.Render(s.explanation()))
 
 	if s.notice != "" {
 		rows = append(rows, "", warningStyle.Render(s.notice))
 	}
 
 	return indent(strings.Join(rows, "\n"))
+}
+
+// explanation says what the screen guarantees, which differs when editing a file
+// whose values cannot be read back.
+func (s *entriesStep) explanation() string {
+	if s.state.merging() {
+		return "Values already sealed cannot be shown, only replaced or removed."
+	}
+	return "Values stay masked and are never written to disk unencrypted."
 }
 
 // row renders one entry: its key, a mask standing in for the value, and where the

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/lmarqs/kubeseal-ui/internal/seal"
 	"github.com/lmarqs/kubeseal-ui/internal/secret"
 )
 
@@ -55,11 +56,35 @@ type app struct {
 func newApp(options Options) *app {
 	wizardState := &state{options: options}
 	wizardState.draft.Type = secret.TypeOpaque
+	if options.Merge != nil {
+		adoptExistingFile(wizardState, options.Merge)
+	}
 
 	application := &app{state: wizardState}
 	application.stack = []step{newContextStep(wizardState)}
 
 	return application
+}
+
+// adoptExistingFile takes the identity and scope of the file being edited, and
+// lists the keys already sealed in it. Their values cannot be read back, so they
+// appear as entries that can only be replaced or removed.
+func adoptExistingFile(wizardState *state, existing *seal.Existing) {
+	wizardState.draft.Namespace = existing.Namespace
+	wizardState.draft.Type = existing.Type
+	wizardState.scope = existing.Scope
+	wizardState.scopeChosen = true
+
+	if name, err := secret.NewName(existing.Name); err == nil {
+		wizardState.draft.Name = name
+	}
+
+	for _, key := range existing.Keys {
+		wizardState.draft.Entries.Set(secret.Entry{
+			Key:    secret.Key(key),
+			Source: secret.SourceExisting,
+		})
+	}
 }
 
 func (a *app) Init() tea.Cmd {

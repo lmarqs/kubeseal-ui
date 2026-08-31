@@ -74,6 +74,10 @@ type Options struct {
 	Namespace string
 	Name      string
 
+	// Merge, when set, means the wizard is editing an existing sealed secret file
+	// rather than creating one. Its name, namespace and scope are fixed by the file.
+	Merge *seal.Existing
+
 	// DefaultOutputPath is offered when saving to a file.
 	DefaultOutputPath func(name string) string
 }

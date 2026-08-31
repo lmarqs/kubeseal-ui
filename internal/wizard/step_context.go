@@ -82,7 +82,7 @@ func (s *contextStep) Update(message tea.Msg) (step, tea.Cmd) {
 		s.state.contextName = s.chosen
 		s.state.connection = typed.connection
 		s.state.invalidate()
-		return newNamespaceStep(s.state), nil
+		return afterCluster(s.state), nil
 
 	case spinnerTickMsg:
 		if !s.opening {
@@ -154,6 +154,16 @@ func (s *contextStep) View() string {
 	}
 
 	return s.form.View()
+}
+
+// afterCluster is the next question once a cluster is chosen. When editing an
+// existing file there is nothing else to ask: its namespace, name, kind and scope
+// are already decided.
+func afterCluster(state *state) step {
+	if state.merging() {
+		return newEntriesStep(state)
+	}
+	return newNamespaceStep(state)
 }
 
 // problem renders a failure with something the user can do about it.

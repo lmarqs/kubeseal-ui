@@ -49,6 +49,7 @@ func newRootCommand() *cobra.Command {
 	})
 
 	opts.register(root.Flags())
+	root.AddCommand(newMergeCommand())
 	root.AddCommand(newVersionCommand())
 
 	return root

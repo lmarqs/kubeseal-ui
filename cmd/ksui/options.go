@@ -42,6 +42,10 @@ type options struct {
 	validate       bool
 	fetchCert      bool
 	ci             bool
+
+	// mergeTarget and remove belong to the merge subcommand.
+	mergeTarget string
+	remove      []string
 }
 
 // entrySources collects the repeatable value flags.
@@ -77,6 +81,34 @@ func (o *options) register(flags *pflag.FlagSet) {
 	flags.BoolVar(&o.validate, "validate", false, "check that the controller can decrypt the sealed secret")
 	flags.BoolVar(&o.fetchCert, "fetch-cert", false, "print the controller certificate to stdout and exit")
 	flags.BoolVar(&o.ci, "ci", false, "never draw the wizard; report what is missing instead of asking")
+}
+
+// registerMergeFlags registers only what merging into an existing file can use.
+// The name, namespace, kind and scope all come from the file itself.
+func (o *options) registerMergeFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&o.kubeconfig, "kubeconfig", "", "path to the kubeconfig file to use")
+	flags.StringVar(&o.kubeContext, "context", "", "kubeconfig context to use")
+
+	flags.StringArrayVar(&o.entries.literals, "from-literal", nil,
+		"key to add or replace, given as key=value (repeatable)")
+	flags.StringArrayVar(&o.entries.files, "from-file", nil,
+		"key to add or replace, read from a file, as [key=]path; path may be - (repeatable)")
+	flags.StringArrayVar(&o.remove, "remove", nil, "key to remove from the file (repeatable)")
+
+	flags.StringVar(&o.certPath, "cert", "", "certificate file or URL to seal with, instead of asking the controller")
+	flags.StringVar(&o.controllerName, "controller-name", seal.DefaultControllerName,
+		"name of the sealed-secrets controller")
+	flags.StringVar(&o.controllerNamespace, "controller-namespace", seal.DefaultControllerNamespace,
+		"namespace of the sealed-secrets controller")
+
+	flags.StringVarP(&o.format, "format", "o", "",
+		"output format: yaml or json; defaults to the shape the file already has")
+	flags.BoolVar(&o.ci, "ci", false, "never draw the wizard; report what is missing instead of asking")
+}
+
+// describesMerge reports whether the flags already say what to change in the file.
+func (o *options) describesMerge() bool {
+	return len(o.entries.literals) > 0 || len(o.entries.files) > 0 || len(o.remove) > 0
 }
 
 // describesSecret reports whether the flags already say what to seal, in which

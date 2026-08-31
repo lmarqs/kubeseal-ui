@@ -60,6 +60,19 @@ func (s *Sealer) Seal(built *corev1.Secret, scope ssv1alpha1.SealingScope, forma
 		return nil, errors.New("no secret to seal")
 	}
 
+	sealed, err := s.sealObject(built, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	return encode(sealed, format)
+}
+
+// sealObject encrypts a secret into a SealedSecret, before it is rendered.
+func (s *Sealer) sealObject(
+	built *corev1.Secret,
+	scope ssv1alpha1.SealingScope,
+) (*ssv1alpha1.SealedSecret, error) {
 	scoped := built.DeepCopy()
 	scoped.Annotations = ssv1alpha1.UpdateScopeAnnotations(scoped.Annotations, scope)
 
@@ -68,7 +81,7 @@ func (s *Sealer) Seal(built *corev1.Secret, scope ssv1alpha1.SealingScope, forma
 		return nil, fmt.Errorf("sealing secret: %w", err)
 	}
 
-	return encode(sealed, format)
+	return sealed, nil
 }
 
 // encode renders a SealedSecret the way kubeseal does, so output is
