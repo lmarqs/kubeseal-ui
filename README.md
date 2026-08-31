@@ -92,6 +92,9 @@ ksui merge db-creds-sealed.yaml --from-literal DB_PASSWORD=rotated --remove OLD_
 The file keeps its name, namespace and scope. Changing any of them would make the
 values already in it unreadable.
 
+`ksui` writes the file back from the SealedSecret it read, so comments and any
+fields that are not part of a SealedSecret do not survive.
+
 ### Sealing scope
 
 By default a sealed secret is bound to both its namespace and its name, so

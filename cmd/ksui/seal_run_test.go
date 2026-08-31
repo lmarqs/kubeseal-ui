@@ -270,3 +270,20 @@ func TestVersionIsPrintedToStdout(t *testing.T) {
 		t.Errorf("stdout = %q, want build information", got.stdout)
 	}
 }
+
+// TestOnlyOneValueCanComeFromStdin guards the case a second "-" would otherwise
+// seal as an empty value, stdin having already been drained.
+func TestOnlyOneValueCanComeFromStdin(t *testing.T) {
+	got := runCommand(t, strings.NewReader("piped-secret"),
+		"--cert", certificateFile(t),
+		"--namespace", "payments",
+		"--name", "db-creds",
+		"--from-file", "first=-",
+		"--from-file", "second=-",
+	)
+
+	if got.exitCode != exitUsage {
+		t.Errorf("exit code = %d, want %d; the second value would silently be empty",
+			got.exitCode, exitUsage)
+	}
+}

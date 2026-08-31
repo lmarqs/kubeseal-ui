@@ -22,6 +22,9 @@ make the values already in the file unreadable.
 Values already sealed cannot be shown. A key can be given a new value or removed,
 never read back.
 
+The file is written from the SealedSecret it describes, so comments and any fields
+outside a SealedSecret do not survive the rewrite.
+
 Run it with just a file to be walked through the keys interactively.`
 
 func newMergeCommand() *cobra.Command {

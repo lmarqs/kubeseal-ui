@@ -195,6 +195,8 @@ func (o *options) collectLiterals(draft *secret.Draft) error {
 }
 
 func (o *options) collectFiles(draft *secret.Draft, stdin io.Reader) error {
+	stdinTaken := false
+
 	for _, spec := range o.entries.files {
 		key, path := kubeseal.ParseFromFile(spec)
 		if key == "" {
@@ -204,6 +206,16 @@ func (o *options) collectFiles(draft *secret.Draft, stdin io.Reader) error {
 		parsed, err := secret.NewKey(key)
 		if err != nil {
 			return usageError(err, "secret keys may contain letters, digits, '-', '_' and '.'")
+		}
+
+		// Stdin can only be read once, so a second key asking for it would silently
+		// get nothing.
+		if stdinPaths[path] {
+			if stdinTaken {
+				return usageErrorf("read the other values from files",
+					"only one key can be read from stdin, and %q is the second", key)
+			}
+			stdinTaken = true
 		}
 
 		value, err := readValue(path, stdin)
