@@ -113,11 +113,12 @@ func (a *app) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Ctrl+C belongs to the terminal: leave immediately rather than treating it
-		// as a wizard key.
+		// as a wizard key. It reports an interrupt rather than a quit, so leaving
+		// this way is not mistaken for having finished.
 		if typed.Type == tea.KeyCtrlC {
 			a.quitting = true
 			a.state.draft.Entries.Scrub()
-			return a, tea.Quit
+			return a, tea.Interrupt
 		}
 		if typed.String() == "esc" {
 			// A step showing a confirmation claims Esc to dismiss it, since going back

@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -281,6 +282,37 @@ func TestInterruptingScrubsTheValuesHeldInMemory(t *testing.T) {
 			t.Fatalf("a plaintext value survived the interrupt: %q", held)
 		}
 	}
+}
+
+func TestInterruptingReportsAnInterruptRatherThanAQuit(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newEntriesStep(wizardState)}
+
+	_, command := application.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if command == nil {
+		t.Fatal("ctrl+c produced no command")
+	}
+	if message := command(); !isInterrupt(message) {
+		t.Errorf("ctrl+c sent %T, want an interrupt so the run does not look finished", message)
+	}
+}
+
+func TestCancellingTheContextInterruptsTheWizard(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := Run(ctx, Options{Clusters: fakeClusters{}}, io.Discard, strings.NewReader(""))
+
+	if !errors.Is(err, ErrInterrupted) {
+		t.Errorf("err = %v, want ErrInterrupted so a signal exits 130", err)
+	}
+}
+
+func isInterrupt(message tea.Msg) bool {
+	_, ok := message.(tea.InterruptMsg)
+	return ok
 }
 
 func TestTheBreadcrumbShowsWhatHasBeenChosen(t *testing.T) {

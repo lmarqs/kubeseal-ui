@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+
+	"github.com/lmarqs/kubeseal-ui/internal/wizard"
 )
 
 // Exit codes form part of the documented CLI contract (docs/reference/cli-io-contract.md).
@@ -55,6 +58,12 @@ func exitCodeOf(err error) int {
 	var coded *codedError
 	if errors.As(err, &coded) {
 		return coded.code
+	}
+
+	// A signal cancels the command's context, and Ctrl+C leaves the wizard, without
+	// either being a failure of the operation itself.
+	if errors.Is(err, context.Canceled) || errors.Is(err, wizard.ErrInterrupted) {
+		return exitInterrupted
 	}
 
 	return exitError

@@ -19,6 +19,7 @@ import (
 // talks to.
 func runWizard(cmd *cobra.Command, o *options) error {
 	result, err := wizard.Run(
+		cmd.Context(),
 		wizard.Options{
 			Clusters:          wizardClusters{options: o},
 			Writer:            fileWriter{},

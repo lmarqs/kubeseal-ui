@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -22,8 +21,12 @@ func run() int {
 	if err == nil {
 		return exitOK
 	}
-	if errors.Is(err, context.Canceled) {
-		return exitInterrupted
+
+	code := exitCodeOf(err)
+	// An interrupt is what the caller asked for, so it is reported by the exit code
+	// alone.
+	if code == exitInterrupted {
+		return code
 	}
 
 	// Diagnostics go to stderr so stdout carries only sealed-secret data.
@@ -31,5 +34,5 @@ func run() int {
 	if hint := hintOf(err); hint != "" {
 		fmt.Fprintf(os.Stderr, "hint: %s\n", hint)
 	}
-	return exitCodeOf(err)
+	return code
 }
