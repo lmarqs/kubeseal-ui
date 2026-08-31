@@ -186,3 +186,38 @@ func formOf(current step) *huh.Form {
 		return nil
 	}
 }
+
+// actionsApp puts a sealed secret on the "what now?" screen with a controller
+// that answers, so the menu can be used more than once.
+func actionsApp(t *testing.T) *app {
+	t.Helper()
+
+	wizardState := testState(t, testKey(t))
+	wizardState.sealed = []byte("kind: SealedSecret\n")
+	wizardState.certificate = certificateFor(testKey(t))
+	wizardState.connection.Validator = &fakeValidator{}
+
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newReviewStep(wizardState), newActionsStep(wizardState)}
+	settle(application, application.current().Init())
+
+	return application
+}
+
+func TestTheMenuStillWorksAfterAnActionThatStaysOnTheScreen(t *testing.T) {
+	application := actionsApp(t)
+
+	confirm(application) // check the controller can decrypt it
+	settle(application, nil)
+
+	current, ok := application.current().(*actionsStep)
+	if !ok {
+		t.Fatalf("checking led to %T, want the same screen", application.current())
+	}
+	if !strings.Contains(current.View(), "print it and quit") {
+		t.Fatalf("the menu is gone after checking:\n%q", current.View())
+	}
+	if current.form.State != huh.StateNormal {
+		t.Fatal("the menu kept the submitted form")
+	}
+}
