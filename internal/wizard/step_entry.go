@@ -68,7 +68,14 @@ func (s *entryStep) Footer() string {
 }
 
 func (s *entryStep) Init() tea.Cmd {
-	if s.sourceForm != nil || s.valueForm != nil {
+	if s.valueForm != nil {
+		if spent(s.valueForm) {
+			s.buildValueForm()
+			return s.valueForm.Init()
+		}
+		return nil
+	}
+	if !spent(s.sourceForm) {
 		return nil
 	}
 
@@ -123,8 +130,8 @@ func (s *entryStep) updateValue(message tea.Msg) (step, tea.Cmd) {
 	if err := s.commit(); err != nil {
 		s.failure = err.Error()
 		// Let the user correct the answer rather than losing what they typed.
-		s.valueForm.State = huh.StateNormal
-		return s, nil
+		s.buildValueForm()
+		return s, s.valueForm.Init()
 	}
 
 	s.finished = true

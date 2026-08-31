@@ -32,11 +32,13 @@ func (s *nameStep) Init() tea.Cmd {
 			return advanceTo(newScopeStep(s.state))
 		}
 	}
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 
-	s.typed = s.state.draft.Name.String()
+	if s.typed == "" {
+		s.typed = s.state.draft.Name.String()
+	}
 	s.form = huh.NewForm(huh.NewGroup(
 		huh.NewInput().
 			Title("Secret name").

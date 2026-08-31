@@ -25,7 +25,7 @@ func (s *scopeStep) Heading() string { return "How should it be scoped?" }
 func (s *scopeStep) Footer() string  { return "↑/↓ choose   enter confirm" }
 
 func (s *scopeStep) Init() tea.Cmd {
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 

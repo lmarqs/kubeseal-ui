@@ -29,7 +29,7 @@ func (s *tlsStep) Heading() string { return "Where are the certificate and key?"
 func (s *tlsStep) Footer() string  { return "enter next field" }
 
 func (s *tlsStep) Init() tea.Cmd {
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 
@@ -64,8 +64,9 @@ func (s *tlsStep) Update(message tea.Msg) (step, tea.Cmd) {
 
 	if err := s.collect(); err != nil {
 		s.failure = err.Error()
-		s.form.State = huh.StateNormal
-		return s, nil
+		// The paths are kept, so the form comes back filled in for correcting.
+		s.form = nil
+		return s, s.Init()
 	}
 
 	return newReviewStep(s.state), nil

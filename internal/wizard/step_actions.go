@@ -82,7 +82,7 @@ func (s *actionsStep) cancelApply() {
 }
 
 func (s *actionsStep) Init() tea.Cmd {
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 
@@ -198,18 +198,19 @@ func (s *actionsStep) updateChoice(message tea.Msg) (step, tea.Cmd) {
 		return s, cmd
 	}
 
-	// Reset so the menu works again after an action that stays on this screen.
-	s.form.State = huh.StateNormal
+	// The menu is built again so it works after an action that stays on this screen.
+	s.form = nil
+	menu := s.Init()
 	s.failure = ""
 
 	switch s.chosen {
 	case actionValidate:
-		return s, s.validate()
+		return s, tea.Batch(menu, s.validate())
 	case actionApply:
-		return s, s.startApply()
+		return s, tea.Batch(menu, s.startApply())
 	case actionSave:
 		s.askWhereToSave()
-		return s, s.saveForm.Init()
+		return s, tea.Batch(menu, s.saveForm.Init())
 	case actionPrint:
 		return s, finishPrinting()
 	default:

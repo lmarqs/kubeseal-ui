@@ -27,10 +27,15 @@ type namespaceStep struct {
 	notice  string
 	// typing is set when the namespace is entered as text rather than picked, which
 	// changes which keys do anything.
-	typing  bool
-	loading bool
-	spinner spinner
-	asked   bool
+	typing bool
+	// pickable is set once a list of namespaces has been read, which is what makes
+	// leaving the text field for the list possible.
+	pickable   bool
+	namespaces []string
+	loaded     bool
+	loading    bool
+	spinner    spinner
+	asked      bool
 }
 
 func newNamespaceStep(state *state) *namespaceStep {
@@ -59,8 +64,12 @@ func (s *namespaceStep) Init() tea.Cmd {
 		s.accept(s.chosen)
 		return advanceTo(newTypeStep(s.state))
 	}
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
+	}
+	if s.loaded {
+		s.rebuild()
+		return s.form.Init()
 	}
 
 	s.loading = true
@@ -87,7 +96,9 @@ func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 
 	case namespacesLoadedMsg:
 		s.loading = false
-		s.build(typed.namespaces, typed.err)
+		s.loaded = true
+		s.adopt(typed.namespaces, typed.err)
+		s.rebuild()
 		return s, s.form.Init()
 
 	case spinnerTickMsg:
@@ -113,7 +124,7 @@ func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 		if !s.typing && s.chosen == typeNamespaceOption {
 			s.typing = true
 			s.notice = ""
-			s.form = s.typedForm()
+			s.rebuild()
 			return s, s.form.Init()
 		}
 
@@ -134,25 +145,35 @@ func (s *namespaceStep) accept(namespace string) {
 	s.state.invalidate()
 }
 
-// build offers the namespaces that could be listed, and always offers typing one
-// in as well, since a namespace may not exist yet.
-func (s *namespaceStep) build(namespaces []string, err error) {
+// adopt records what listing the namespaces produced. A cluster that will not
+// list them is not a failure: the namespace is typed in instead.
+func (s *namespaceStep) adopt(namespaces []string, err error) {
 	if err != nil {
 		s.noticeFor(err)
 		s.typing = true
-		s.form = s.typedForm()
 		s.chosen = typeNamespaceOption
 		return
 	}
 
+	s.namespaces = namespaces
+	s.pickable = true
 	s.typing = false
-	options := make([]huh.Option[string], 0, len(namespaces)+1)
-	for _, namespace := range namespaces {
+}
+
+// rebuild makes the form for whichever way the namespace is being given.
+func (s *namespaceStep) rebuild() {
+	if s.typing {
+		s.form = s.typedForm()
+		return
+	}
+
+	options := make([]huh.Option[string], 0, len(s.namespaces)+1)
+	for _, namespace := range s.namespaces {
 		options = append(options, huh.NewOption(namespace, namespace))
 	}
 	options = append(options, huh.NewOption("✎ type a namespace…", typeNamespaceOption))
 
-	s.chosen = s.preselected(namespaces)
+	s.chosen = s.preselected(s.namespaces)
 	s.form = huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Options(options...).

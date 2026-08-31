@@ -23,7 +23,7 @@ func (s *typeStep) Heading() string { return "What kind of secret?" }
 func (s *typeStep) Footer() string  { return "↑/↓ choose   enter confirm" }
 
 func (s *typeStep) Init() tea.Cmd {
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 

@@ -28,7 +28,7 @@ func (s *dockerStep) Heading() string { return "Which registry, and as whom?" }
 func (s *dockerStep) Footer() string  { return "enter next field" }
 
 func (s *dockerStep) Init() tea.Cmd {
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 
@@ -76,8 +76,9 @@ func (s *dockerStep) Update(message tea.Msg) (step, tea.Cmd) {
 	entry, err := secret.DockerEntry(s.auth)
 	if err != nil {
 		s.failure = err.Error()
-		s.form.State = huh.StateNormal
-		return s, nil
+		// The answers are kept, so the form comes back filled in for correcting.
+		s.form = nil
+		return s, s.Init()
 	}
 
 	s.state.draft.Entries.Set(entry)

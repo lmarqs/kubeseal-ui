@@ -1,0 +1,188 @@
+package wizard
+
+import (
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
+
+	"github.com/lmarqs/kubeseal-ui/internal/kube"
+)
+
+// settle runs the commands a step produced, and the commands those produce, the
+// way the program itself would, so a screen is examined in the state a user would
+// actually see.
+func settle(application *app, cmd tea.Cmd) {
+	pending := []tea.Cmd{cmd}
+
+	for round := 0; round < 8 && len(pending) > 0; round++ {
+		var next []tea.Cmd
+
+		for _, command := range pending {
+			if command == nil {
+				continue
+			}
+			message := command()
+			if message == nil {
+				continue
+			}
+			if batch, ok := message.(tea.BatchMsg); ok {
+				next = append(next, batch...)
+				continue
+			}
+			if _, ok := message.(spinnerTickMsg); ok {
+				continue
+			}
+			_, produced := application.Update(message)
+			next = append(next, produced)
+		}
+
+		pending = next
+	}
+}
+
+// testApp starts a wizard on the cluster question with a cluster that answers.
+func testApp(t *testing.T, namespaces []string) *app {
+	t.Helper()
+
+	wizardState := &state{options: Options{
+		Clusters: fakeClusters{
+			contexts:   []kube.Context{{Name: "prod"}, {Name: "staging"}},
+			current:    "prod",
+			connection: Connection{Cluster: &fakeCluster{namespaces: namespaces}},
+		},
+	}}
+
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newContextStep(wizardState)}
+	settle(application, application.Init())
+
+	return application
+}
+
+func send(application *app, message tea.Msg) {
+	_, cmd := application.Update(message)
+	settle(application, cmd)
+}
+
+func confirm(application *app) {
+	send(application, tea.KeyMsg{Type: tea.KeyEnter})
+}
+
+func goBack(application *app) {
+	send(application, tea.KeyMsg{Type: tea.KeyEsc})
+}
+
+func TestGoingBackToAnAnsweredScreenShowsItAgain(t *testing.T) {
+	application := testApp(t, []string{"default", "payments"})
+	confirm(application) // cluster
+	confirm(application) // namespace
+
+	if _, ok := application.current().(*typeStep); !ok {
+		t.Fatalf("answering both questions led to %T, want the kind of secret", application.current())
+	}
+
+	goBack(application)
+
+	current, ok := application.current().(*namespaceStep)
+	if !ok {
+		t.Fatalf("esc led to %T, want the namespace question", application.current())
+	}
+	if body := current.View(); !strings.Contains(body, "payments") {
+		t.Fatalf("the namespace screen came back empty:\n%q", body)
+	}
+}
+
+func TestGoingBackLetsTheAnswerBeChanged(t *testing.T) {
+	application := testApp(t, []string{"default", "payments"})
+	confirm(application) // cluster
+	confirm(application) // namespace
+
+	goBack(application)
+	send(application, tea.KeyMsg{Type: tea.KeyDown})
+
+	if _, ok := application.current().(*namespaceStep); !ok {
+		t.Fatalf("moving the selection left the screen for %T", application.current())
+	}
+
+	confirm(application)
+
+	if application.state.draft.Namespace != "payments" {
+		t.Errorf("the namespace stayed %q; the new answer was not taken",
+			application.state.draft.Namespace)
+	}
+}
+
+func TestGoingBackToTheClusterScreenShowsTheClustersAgain(t *testing.T) {
+	application := testApp(t, []string{"default"})
+	confirm(application) // cluster
+
+	goBack(application)
+
+	current, ok := application.current().(*contextStep)
+	if !ok {
+		t.Fatalf("esc led to %T, want the cluster question", application.current())
+	}
+	if body := current.View(); !strings.Contains(body, "staging") {
+		t.Fatalf("the cluster screen came back empty:\n%q", body)
+	}
+}
+
+func TestGoingBackDoesNotSkipStraightForwardAgain(t *testing.T) {
+	application := testApp(t, []string{"default"})
+	confirm(application) // cluster
+	confirm(application) // namespace
+	confirm(application) // kind of secret
+
+	goBack(application)
+	goBack(application)
+
+	if _, ok := application.current().(*namespaceStep); !ok {
+		t.Fatalf("two escapes led to %T, want the namespace question", application.current())
+	}
+
+	send(application, tea.KeyMsg{Type: tea.KeyDown})
+
+	if _, ok := application.current().(*namespaceStep); !ok {
+		t.Fatalf("a keypress jumped forward to %T on its own", application.current())
+	}
+}
+
+// spentForms are the ones a screen keeps after it has been left, which huh cannot
+// draw or drive any more.
+func TestNoScreenKeepsASubmittedForm(t *testing.T) {
+	application := testApp(t, []string{"default"})
+	confirm(application) // cluster
+	confirm(application) // namespace
+	confirm(application) // kind of secret
+
+	for len(application.stack) > 1 {
+		goBack(application)
+
+		current := application.current()
+		if form := formOf(current); form != nil && form.State != huh.StateNormal {
+			t.Errorf("%T came back with a submitted form", current)
+		}
+		if body := strings.TrimSpace(current.View()); body == "" {
+			t.Errorf("%T came back with nothing on screen", current)
+		}
+	}
+}
+
+func formOf(current step) *huh.Form {
+	switch typed := current.(type) {
+	case *contextStep:
+		return typed.form
+	case *namespaceStep:
+		return typed.form
+	case *typeStep:
+		return typed.form
+	case *nameStep:
+		return typed.form
+	case *scopeStep:
+		return typed.form
+	default:
+		return nil
+	}
+}

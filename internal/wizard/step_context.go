@@ -14,12 +14,17 @@ import (
 // contextStep asks which cluster to seal for. Contexts are read from the local
 // kubeconfig, so this screen never waits on the network.
 type contextStep struct {
-	state    *state
-	form     *huh.Form
-	chosen   string
-	failure  error
-	opening  bool
-	spinner  spinner
+	state   *state
+	form    *huh.Form
+	chosen  string
+	failure error
+	opening bool
+	spinner spinner
+	// contexts is kept so that returning to this screen redraws the list rather
+	// than reading the kubeconfig again.
+	contexts []kube.Context
+	current  string
+	loaded   bool
 	prefixed bool
 }
 
@@ -44,12 +49,21 @@ func (s *contextStep) Init() tea.Cmd {
 		s.chosen = s.state.options.Context
 		return s.openCluster()
 	}
-	if s.form != nil {
+	if !spent(s.form) {
 		return nil
 	}
 
+	if s.loaded {
+		s.buildForm()
+		return s.form.Init()
+	}
+
+	return loadContexts(s.state.options.Clusters)
+}
+
+func loadContexts(clusters Clusters) tea.Cmd {
 	return func() tea.Msg {
-		contexts, current, err := s.state.options.Clusters.Contexts()
+		contexts, current, err := clusters.Contexts()
 		return contextsLoadedMsg{contexts: contexts, current: current, err: err}
 	}
 }
@@ -84,14 +98,17 @@ func (s *contextStep) Update(message tea.Msg) (step, tea.Cmd) {
 			s.failure = typed.err
 			return s, nil
 		}
-		s.buildForm(typed.contexts, typed.current)
+		s.contexts, s.current, s.loaded = typed.contexts, typed.current, true
+		s.buildForm()
 		return s, s.form.Init()
 
 	case clusterOpenedMsg:
 		s.opening = false
 		if typed.err != nil {
 			s.failure = typed.err
-			return s, nil
+			// The list comes back so another cluster can be tried; a cluster that
+			// cannot be reached must not be the end of the wizard.
+			return s, s.reopenList()
 		}
 		s.state.contextName = s.chosen
 		s.state.connection = typed.connection
@@ -125,13 +142,23 @@ func (s *contextStep) Update(message tea.Msg) (step, tea.Cmd) {
 	return s, cmd
 }
 
-// buildForm offers the contexts, with the current one selected so that pressing
-// enter does the expected thing.
-func (s *contextStep) buildForm(contexts []kube.Context, current string) {
-	options := make([]huh.Option[string], 0, len(contexts))
-	for _, context := range contexts {
+// reopenList puts the list of clusters back on screen after an attempt to open
+// one failed, keeping the failure visible above it.
+func (s *contextStep) reopenList() tea.Cmd {
+	if !s.loaded {
+		return loadContexts(s.state.options.Clusters)
+	}
+	s.buildForm()
+	return s.form.Init()
+}
+
+// buildForm offers the contexts, with the one already chosen selected so that
+// pressing enter does the expected thing.
+func (s *contextStep) buildForm() {
+	options := make([]huh.Option[string], 0, len(s.contexts))
+	for _, context := range s.contexts {
 		label := context.Name
-		if context.Name == current {
+		if context.Name == s.current {
 			label += "  (current)"
 		}
 		if context.Namespace != "" {
@@ -140,7 +167,9 @@ func (s *contextStep) buildForm(contexts []kube.Context, current string) {
 		options = append(options, huh.NewOption(label, context.Name))
 	}
 
-	s.chosen = current
+	if s.chosen == "" {
+		s.chosen = s.current
+	}
 	s.form = huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Options(options...).
@@ -151,6 +180,7 @@ func (s *contextStep) buildForm(contexts []kube.Context, current string) {
 
 func (s *contextStep) openCluster() tea.Cmd {
 	s.opening = true
+	s.failure = nil
 	chosen := s.chosen
 
 	return tea.Batch(s.spinner.tick(), func() tea.Msg {
@@ -160,14 +190,19 @@ func (s *contextStep) openCluster() tea.Cmd {
 }
 
 func (s *contextStep) View() string {
-	if s.failure != nil {
-		return indent(problem(s.failure, "Check that kubectl can reach this cluster."))
-	}
 	if s.opening {
 		return indent(s.spinner.view(fmt.Sprintf("Connecting to %s…", s.chosen)))
 	}
 	if s.form == nil {
+		if s.failure != nil {
+			return indent(problem(s.failure, "Check that kubectl can reach this cluster."))
+		}
 		return indent(s.spinner.view("Reading kubeconfig…"))
+	}
+
+	if s.failure != nil {
+		return indent(problem(s.failure, "Choose another cluster, or check that kubectl can reach this one.")) +
+			"\n\n" + s.form.View()
 	}
 
 	return s.form.View()
