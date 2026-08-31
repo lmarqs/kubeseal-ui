@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"time"
-
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 )
 
 // ErrNotCached reports that no certificate has been stored for a controller.
@@ -43,7 +41,7 @@ func NewCache(dir string) *Cache {
 
 // Load returns the certificate cached for a controller on a cluster, along with
 // how long ago it was stored.
-func (c *Cache) Load(cluster string, controller kube.Controller) (Certificate, time.Duration, error) {
+func (c *Cache) Load(cluster string, controller Controller) (Certificate, time.Duration, error) {
 	path := c.pathFor(cluster, controller)
 
 	info, err := os.Stat(path)
@@ -70,7 +68,7 @@ func (c *Cache) Load(cluster string, controller kube.Controller) (Certificate, t
 
 // Store writes a certificate to the cache, replacing any previous copy. The write
 // is atomic so a cancelled run cannot leave a half-written certificate behind.
-func (c *Cache) Store(cluster string, controller kube.Controller, certificate Certificate) error {
+func (c *Cache) Store(cluster string, controller Controller, certificate Certificate) error {
 	path := c.pathFor(cluster, controller)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -99,7 +97,7 @@ func (c *Cache) Store(cluster string, controller kube.Controller, certificate Ce
 }
 
 // pathFor derives the cache location of one controller's certificate.
-func (c *Cache) pathFor(cluster string, controller kube.Controller) string {
+func (c *Cache) pathFor(cluster string, controller Controller) string {
 	return filepath.Join(
 		c.dir,
 		sanitize(cluster),

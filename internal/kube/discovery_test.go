@@ -14,6 +14,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
+	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
 func service(namespace, name string, labels map[string]string) *corev1.Service {
@@ -33,7 +34,7 @@ func TestDiscoverControllersPrefersTheStockInstallation(t *testing.T) {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
 
-	want := []kube.Controller{kube.DefaultController()}
+	want := []seal.Controller{seal.DefaultController()}
 	if len(found) != 1 || found[0] != want[0] {
 		t.Errorf("controllers = %v, want %v", found, want)
 	}
@@ -52,7 +53,7 @@ func TestDiscoverControllersFindsLabelledServicesInAnyNamespace(t *testing.T) {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
 
-	want := []kube.Controller{
+	want := []seal.Controller{
 		{Namespace: "team-a", Name: "sealed-secrets"},
 		{Namespace: "team-b", Name: "sealed-secrets"},
 	}
@@ -77,7 +78,7 @@ func TestDiscoverControllersFallsBackToTheNamingConvention(t *testing.T) {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
 
-	want := kube.Controller{Namespace: "infra", Name: "my-sealed-secrets-controller"}
+	want := seal.Controller{Namespace: "infra", Name: "my-sealed-secrets-controller"}
 	if len(found) != 1 || found[0] != want {
 		t.Errorf("controllers = %v, want [%v]", found, want)
 	}

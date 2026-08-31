@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
-
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 )
 
 // DefaultCacheTTL is how long a cached certificate is reused before the
@@ -35,11 +33,11 @@ type Resolver struct {
 	// ClientConfig is how the controller is reached; nil means offline.
 	ClientConfig kubeseal.ClientConfig
 	// Fetch defaults to FetchCertificate and exists so tests can substitute it.
-	Fetch func(context.Context, kubeseal.ClientConfig, kube.Controller) (Certificate, error)
+	Fetch func(context.Context, kubeseal.ClientConfig, Controller) (Certificate, error)
 }
 
 // Resolve returns the certificate to seal with.
-func (r *Resolver) Resolve(ctx context.Context, controller kube.Controller) (Certificate, error) {
+func (r *Resolver) Resolve(ctx context.Context, controller Controller) (Certificate, error) {
 	if r.CertPath != "" {
 		return LoadCertificate(ctx, r.CertPath)
 	}
@@ -63,7 +61,7 @@ func (r *Resolver) Resolve(ctx context.Context, controller kube.Controller) (Cer
 	return Certificate{}, fetchErr
 }
 
-func (r *Resolver) load(controller kube.Controller) (Certificate, time.Duration, error) {
+func (r *Resolver) load(controller Controller) (Certificate, time.Duration, error) {
 	if r.Cache == nil {
 		return Certificate{}, 0, ErrNotCached
 	}
@@ -72,14 +70,14 @@ func (r *Resolver) load(controller kube.Controller) (Certificate, time.Duration,
 
 // store records a freshly fetched certificate. A cache that cannot be written is
 // not worth failing a seal over, so the error is deliberately dropped.
-func (r *Resolver) store(controller kube.Controller, certificate Certificate) {
+func (r *Resolver) store(controller Controller, certificate Certificate) {
 	if r.Cache == nil {
 		return
 	}
 	_ = r.Cache.Store(r.Cluster, controller, certificate)
 }
 
-func (r *Resolver) fetch(ctx context.Context, controller kube.Controller) (Certificate, error) {
+func (r *Resolver) fetch(ctx context.Context, controller Controller) (Certificate, error) {
 	fetch := r.Fetch
 	if fetch == nil {
 		fetch = FetchCertificate

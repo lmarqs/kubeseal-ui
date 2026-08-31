@@ -11,15 +11,14 @@ import (
 	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
 	"k8s.io/client-go/rest"
 
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
 // fetcherReturning builds a Fetch stub serving the given PEM, counting calls.
 func fetcherReturning(t *testing.T, pemBytes []byte, calls *int) func(
-	context.Context, kubeseal.ClientConfig, kube.Controller) (seal.Certificate, error) {
+	context.Context, kubeseal.ClientConfig, seal.Controller) (seal.Certificate, error) {
 	t.Helper()
-	return func(context.Context, kubeseal.ClientConfig, kube.Controller) (seal.Certificate, error) {
+	return func(context.Context, kubeseal.ClientConfig, seal.Controller) (seal.Certificate, error) {
 		*calls++
 		return seal.ParseCertificate(pemBytes, seal.OriginController, "controller")
 	}
@@ -27,8 +26,8 @@ func fetcherReturning(t *testing.T, pemBytes []byte, calls *int) func(
 
 // unreachableController stands in for a controller that cannot be contacted.
 func unreachableController(err error) func(
-	context.Context, kubeseal.ClientConfig, kube.Controller) (seal.Certificate, error) {
-	return func(context.Context, kubeseal.ClientConfig, kube.Controller) (seal.Certificate, error) {
+	context.Context, kubeseal.ClientConfig, seal.Controller) (seal.Certificate, error) {
+	return func(context.Context, kubeseal.ClientConfig, seal.Controller) (seal.Certificate, error) {
 		return seal.Certificate{}, err
 	}
 }
@@ -52,7 +51,7 @@ func TestAnExplicitCertificateFileIsUsedWithoutContactingTheController(t *testin
 		Fetch:    fetcherReturning(t, pemBytes, &calls),
 	}
 
-	certificate, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	certificate, err := resolver.Resolve(context.Background(), seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
@@ -75,7 +74,7 @@ func TestTheControllerIsAskedWhenNothingIsCached(t *testing.T) {
 		Fetch:        fetcherReturning(t, pemBytes, &calls),
 	}
 
-	certificate, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	certificate, err := resolver.Resolve(context.Background(), seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
@@ -99,10 +98,10 @@ func TestAFetchedCertificateIsCachedForTheNextRun(t *testing.T) {
 		Fetch:        fetcherReturning(t, pemBytes, &calls),
 	}
 
-	if _, err := resolver.Resolve(context.Background(), kube.DefaultController()); err != nil {
+	if _, err := resolver.Resolve(context.Background(), seal.DefaultController()); err != nil {
 		t.Fatalf("first Resolve() returned error: %v", err)
 	}
-	second, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	second, err := resolver.Resolve(context.Background(), seal.DefaultController())
 	if err != nil {
 		t.Fatalf("second Resolve() returned error: %v", err)
 	}
@@ -119,7 +118,7 @@ func TestAnExpiredCacheEntryTriggersAFreshFetch(t *testing.T) {
 	pemBytes, _ := certificatePEM(t)
 	calls := 0
 	cache := seal.NewCache(t.TempDir())
-	storeCertificate(t, cache, "https://prod.example", kube.DefaultController(), pemBytes)
+	storeCertificate(t, cache, "https://prod.example", seal.DefaultController(), pemBytes)
 	resolver := &seal.Resolver{
 		Cache:        cache,
 		Cluster:      "https://prod.example",
@@ -128,7 +127,7 @@ func TestAnExpiredCacheEntryTriggersAFreshFetch(t *testing.T) {
 		Fetch:        fetcherReturning(t, pemBytes, &calls),
 	}
 
-	certificate, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	certificate, err := resolver.Resolve(context.Background(), seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
@@ -144,7 +143,7 @@ func TestAnExpiredCacheEntryTriggersAFreshFetch(t *testing.T) {
 func TestAnUnreachableControllerFallsBackToTheCacheAndSaysSo(t *testing.T) {
 	pemBytes, _ := certificatePEM(t)
 	cache := seal.NewCache(t.TempDir())
-	storeCertificate(t, cache, "https://prod.example", kube.DefaultController(), pemBytes)
+	storeCertificate(t, cache, "https://prod.example", seal.DefaultController(), pemBytes)
 	unreachable := errors.New("dial tcp: connection refused")
 	resolver := &seal.Resolver{
 		Cache:        cache,
@@ -154,7 +153,7 @@ func TestAnUnreachableControllerFallsBackToTheCacheAndSaysSo(t *testing.T) {
 		Fetch:        unreachableController(unreachable),
 	}
 
-	certificate, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	certificate, err := resolver.Resolve(context.Background(), seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
@@ -179,7 +178,7 @@ func TestAnUnreachableControllerWithNoCacheFails(t *testing.T) {
 		Fetch:        unreachableController(unreachable),
 	}
 
-	_, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	_, err := resolver.Resolve(context.Background(), seal.DefaultController())
 
 	if !errors.Is(err, unreachable) {
 		t.Fatalf("error = %v, want the fetch failure", err)
@@ -189,7 +188,7 @@ func TestAnUnreachableControllerWithNoCacheFails(t *testing.T) {
 func TestResolvingWithoutACacheOrClusterConnectionFails(t *testing.T) {
 	resolver := &seal.Resolver{}
 
-	_, err := resolver.Resolve(context.Background(), kube.DefaultController())
+	_, err := resolver.Resolve(context.Background(), seal.DefaultController())
 
 	if err == nil {
 		t.Fatal("Resolve() succeeded with nothing to resolve from")

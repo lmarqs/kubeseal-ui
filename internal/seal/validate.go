@@ -7,8 +7,6 @@ import (
 	"fmt"
 
 	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
-
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 )
 
 // ErrNotValidated reports that the controller rejected the sealed secret, meaning
@@ -20,7 +18,7 @@ var ErrNotValidated = errors.New("controller cannot decrypt this sealed secret")
 func Validate(
 	ctx context.Context,
 	clientConfig kubeseal.ClientConfig,
-	controller kube.Controller,
+	controller Controller,
 	sealed []byte,
 ) error {
 	if clientConfig == nil {

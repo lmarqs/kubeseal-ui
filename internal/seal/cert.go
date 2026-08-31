@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
-
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 )
 
 // DefaultFetchTimeout bounds how long a certificate fetch may take before the
@@ -72,14 +70,14 @@ func LoadCertificate(ctx context.Context, pathOrURL string) (Certificate, error)
 		return Certificate{}, errors.New("no certificate path given")
 	}
 
-	return readCertificate(ctx, nil, kube.Controller{}, pathOrURL, OriginFile, pathOrURL)
+	return readCertificate(ctx, nil, Controller{}, pathOrURL, OriginFile, pathOrURL)
 }
 
 // FetchCertificate retrieves the certificate a controller serves.
 func FetchCertificate(
 	ctx context.Context,
 	clientConfig kubeseal.ClientConfig,
-	controller kube.Controller,
+	controller Controller,
 ) (Certificate, error) {
 	if clientConfig == nil {
 		return Certificate{}, errors.New("no cluster connection to fetch a certificate from")
@@ -91,7 +89,7 @@ func FetchCertificate(
 func readCertificate(
 	ctx context.Context,
 	clientConfig kubeseal.ClientConfig,
-	controller kube.Controller,
+	controller Controller,
 	pathOrURL string,
 	origin Origin,
 	source string,

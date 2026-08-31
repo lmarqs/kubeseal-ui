@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
+	"github.com/lmarqs/kubeseal-ui/internal/seal"
 	"github.com/lmarqs/kubeseal-ui/internal/secret"
 )
 
@@ -63,9 +64,9 @@ func (o *options) register(flags *pflag.FlagSet) {
 		"secret entry read from a file, as [key=]path; path may be - to read stdin (repeatable)")
 
 	flags.StringVar(&o.certPath, "cert", "", "certificate file or URL to seal with, instead of asking the controller")
-	flags.StringVar(&o.controllerName, "controller-name", kube.DefaultControllerName,
+	flags.StringVar(&o.controllerName, "controller-name", seal.DefaultControllerName,
 		"name of the sealed-secrets controller")
-	flags.StringVar(&o.controllerNamespace, "controller-namespace", kube.DefaultControllerNamespace,
+	flags.StringVar(&o.controllerNamespace, "controller-namespace", seal.DefaultControllerNamespace,
 		"namespace of the sealed-secrets controller")
 
 	flags.StringVarP(&o.format, "format", "o", "yaml", "output format: yaml or json")
@@ -79,8 +80,8 @@ func (o *options) register(flags *pflag.FlagSet) {
 }
 
 // controller is the controller these options point at.
-func (o *options) controller() kube.Controller {
-	return kube.Controller{Namespace: o.controllerNamespace, Name: o.controllerName}
+func (o *options) controller() seal.Controller {
+	return seal.Controller{Namespace: o.controllerNamespace, Name: o.controllerName}
 }
 
 // client builds the kubeconfig-backed client these options describe.

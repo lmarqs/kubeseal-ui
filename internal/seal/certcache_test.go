@@ -14,7 +14,6 @@ import (
 
 	"github.com/bitnami/sealed-secrets/pkg/crypto"
 
-	"github.com/lmarqs/kubeseal-ui/internal/kube"
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
@@ -104,7 +103,7 @@ func TestLoadCertificateRequiresAPath(t *testing.T) {
 }
 
 func TestFetchCertificateWithoutAClusterConnectionFails(t *testing.T) {
-	_, err := seal.FetchCertificate(context.Background(), nil, kube.DefaultController())
+	_, err := seal.FetchCertificate(context.Background(), nil, seal.DefaultController())
 
 	if err == nil {
 		t.Error("FetchCertificate() succeeded without a cluster connection")
@@ -119,10 +118,10 @@ func TestCachedCertificateIsReturnedWithItsAge(t *testing.T) {
 		t.Fatalf("ParseCertificate() returned error: %v", err)
 	}
 
-	if err := cache.Store("https://prod.example", kube.DefaultController(), stored); err != nil {
+	if err := cache.Store("https://prod.example", seal.DefaultController(), stored); err != nil {
 		t.Fatalf("Store() returned error: %v", err)
 	}
-	loaded, age, err := cache.Load("https://prod.example", kube.DefaultController())
+	loaded, age, err := cache.Load("https://prod.example", seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
@@ -141,7 +140,7 @@ func TestCachedCertificateIsReturnedWithItsAge(t *testing.T) {
 func TestLoadReportsErrNotCachedWhenNothingWasStored(t *testing.T) {
 	cache := seal.NewCache(t.TempDir())
 
-	_, _, err := cache.Load("https://prod.example", kube.DefaultController())
+	_, _, err := cache.Load("https://prod.example", seal.DefaultController())
 
 	if !errors.Is(err, seal.ErrNotCached) {
 		t.Fatalf("error = %v, want ErrNotCached", err)
@@ -152,8 +151,8 @@ func TestEachControllerOnAClusterIsCachedSeparately(t *testing.T) {
 	cache := seal.NewCache(t.TempDir())
 	first, _ := certificatePEM(t)
 	second, _ := certificatePEM(t)
-	teamA := kube.Controller{Namespace: "team-a", Name: "sealed-secrets"}
-	teamB := kube.Controller{Namespace: "team-b", Name: "sealed-secrets"}
+	teamA := seal.Controller{Namespace: "team-a", Name: "sealed-secrets"}
+	teamB := seal.Controller{Namespace: "team-b", Name: "sealed-secrets"}
 
 	storeCertificate(t, cache, "https://prod.example", teamA, first)
 	storeCertificate(t, cache, "https://prod.example", teamB, second)
@@ -177,10 +176,10 @@ func TestTheSameControllerNameOnDifferentClustersIsCachedSeparately(t *testing.T
 	production, _ := certificatePEM(t)
 	staging, _ := certificatePEM(t)
 
-	storeCertificate(t, cache, "https://prod.example", kube.DefaultController(), production)
-	storeCertificate(t, cache, "https://staging.example", kube.DefaultController(), staging)
+	storeCertificate(t, cache, "https://prod.example", seal.DefaultController(), production)
+	storeCertificate(t, cache, "https://staging.example", seal.DefaultController(), staging)
 
-	loaded, _, err := cache.Load("https://prod.example", kube.DefaultController())
+	loaded, _, err := cache.Load("https://prod.example", seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
@@ -195,10 +194,10 @@ func TestStoreReplacesAPreviouslyCachedCertificate(t *testing.T) {
 	first, _ := certificatePEM(t)
 	rotated, _ := certificatePEM(t)
 
-	storeCertificate(t, cache, "https://prod.example", kube.DefaultController(), first)
-	storeCertificate(t, cache, "https://prod.example", kube.DefaultController(), rotated)
+	storeCertificate(t, cache, "https://prod.example", seal.DefaultController(), first)
+	storeCertificate(t, cache, "https://prod.example", seal.DefaultController(), rotated)
 
-	loaded, _, err := cache.Load("https://prod.example", kube.DefaultController())
+	loaded, _, err := cache.Load("https://prod.example", seal.DefaultController())
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
@@ -208,7 +207,7 @@ func TestStoreReplacesAPreviouslyCachedCertificate(t *testing.T) {
 	}
 }
 
-func storeCertificate(t *testing.T, cache *seal.Cache, cluster string, controller kube.Controller, pemBytes []byte) {
+func storeCertificate(t *testing.T, cache *seal.Cache, cluster string, controller seal.Controller, pemBytes []byte) {
 	t.Helper()
 	certificate, err := seal.ParseCertificate(pemBytes, seal.OriginController, controller.String())
 	if err != nil {
