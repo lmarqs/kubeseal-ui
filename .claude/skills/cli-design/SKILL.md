@@ -50,24 +50,28 @@ The fundamental rule: **stdout is for data, stderr is for humans.**
 
 | Channel | Content | Consumer |
 |---------|---------|----------|
-| **stdout** | Data: JSON, tree views, resource lists, plan output | Pipes, scripts, jq, other tools |
-| **stderr** | Progress: spinners, status, warnings, confirmations | Human eyes only |
+| **stdout** | Data: the manifest, a fetched certificate, build information | Pipes, scripts, `jq`, `kubectl apply -f -` |
+| **stderr** | Progress: the wizard, spinners, warnings, validation results | Human eyes only |
+
+Writing the interactive flow to stderr is what makes `ksui > sealed.yaml` work
+while the wizard is still on screen.
 
 ### Mode matrix
 
 | Mode | stdout | stderr |
 |------|--------|--------|
-| Default (TTY) | Human-readable data (tree view) | Spinner + progress (if stderr is TTY) |
-| `-json` | Machine-readable JSON only | Nothing |
-| `--ci` | Same as default | Nothing (no ANSI, no spinner) |
-| Piped (no TTY) | Same as default | Nothing (auto-detected) |
+| Interactive (stderr and stdin are TTYs) | The manifest, once sealed | The wizard, spinners, warnings |
+| Flags only | The manifest | Warnings and validation results |
+| `-w <path>` or `merge` | Nothing — the file receives it | Warnings and validation results |
+| `--ci`, or `CI` set, or either stream not a TTY | The manifest | Warnings only; missing input is a usage error, never a prompt |
 
 ### Critical invariants
 
 - Piping stdout must never produce ANSI escapes or spinner artifacts
-- `-json` mode produces zero bytes on stderr
-- `--ci` explicitly suppresses stderr for CI runners where stderr might be a TTY
-- Spinner only appears when: `!ci && !jsonOutput && isStderrTTY()`
+- Redirecting stdout to a file yields the data alone; `2>/dev/null` discards every
+  diagnostic and leaves the data intact
+- The interactive flow requires both stderr and stdin to be terminals
+- `--ci` suppresses it explicitly, for runners where a stream might still be a TTY
 
 ---
 
