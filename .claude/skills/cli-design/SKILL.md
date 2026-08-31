@@ -139,19 +139,19 @@ Rules:
 ### When to show
 
 ```
-showSpinner = !ci && !jsonOutput && isStderrTTY()
+showSpinner = !ci && os.Getenv("CI") == "" && isTerminal(stderr) && isTerminal(stdin)
 ```
 
-All three conditions must hold. This ensures:
-- CI gets clean logs
-- JSON pipes stay pure
+Every condition must hold. This ensures:
+- CI gets clean logs, whether it announces itself by flag or by environment
+- Redirected stdout stays pure
 - Piped stderr stays artifact-free
 
 ### How to render
 
 - Write to stderr only
 - Use `\r\033[K` (carriage return + clear line) for updates
-- Show elapsed time for long operations: `Planning... (12s)`
+- Show elapsed time for long operations: `Fetching certificate... (12s)`
 - Clear completely on finish (no trailing artifacts)
 - Start after 200ms delay (avoid flash on fast operations)
 
@@ -160,9 +160,10 @@ All three conditions must hold. This ensures:
 ## 6. Error Messages
 
 - Write to stderr via the framework's error handling
-- Start with lowercase (Go convention: `fmt.Errorf("plan failed: %w", err)`)
+- Start with lowercase (Go convention: `fmt.Errorf("sealing: %w", err)`)
 - Wrap with context: what failed + why
-- Add hints for actionable recovery: `\n\nhint: check that terraform is installed`
+- Add hints for actionable recovery: `hint: pass --controller-namespace if the
+  controller is not in kube-system`
 - Never use "Press X to Y" patterns (that's TUI territory)
 - Include the failing path/resource when available
 
@@ -174,23 +175,24 @@ Every CLI command must work in these compositions:
 
 ```bash
 # Filter pattern: stdin → transform → stdout
-terraform show -json plan.out | tfui risk
-cat state.json | tfui state list --state -
+pass show db/password | ksui --name db-creds -n payments --from-file password=-
 
-# Substitution pattern: drop-in replacement
-tfui plan -json | jq '.type'           # identical to terraform
-tfui state list | grep "aws"           # identical to terraform
+# Redirection pattern: data to a file, diagnostics to the terminal
+ksui --name db-creds -n payments --from-literal a=b > db-creds.yaml
 
-# Composition pattern: novel analysis
-tfui plan -json | tfui risk --json | jq '.score'
+# Composition pattern: hand the manifest straight to another tool
+ksui --name db-creds -n payments --from-literal a=b -o json | jq '.spec.encryptedData'
+ksui --name db-creds -n payments --from-literal a=b | kubectl apply -f -
 ```
 
 ### Stdin conventions
 
-- `-` means stdin (universal Unix convention)
+- `-` means stdin (universal Unix convention), and so does `/dev/stdin`
 - Detect stdin availability: `!isatty(stdin)`
 - If no stdin and no file argument → error with suggestions
 - Never block waiting for stdin without indicating what's expected
+- Only one value may be read from stdin. A second would silently receive nothing,
+  so asking twice is a usage error rather than a surprise at runtime.
 
 ---
 
@@ -207,18 +209,28 @@ When stdout is not a TTY:
 
 ---
 
-## 9. JSON Output Design
+## 9. Output Format Design
 
-### For wrapped commands (`-json`)
+### When the format is someone else's schema
 
-Byte-for-byte compatible with the original tool. No additions, no reformatting.
+A SealedSecret is a Kubernetes resource, so `-o yaml` and `-o json` are two
+encodings of one object, not two schemas. The tool picks neither the field names
+nor the shape — it renders what the API type says. `kubectl apply -f -` accepting
+the result is the test.
 
-### For novel commands (`--json`)
+Choose the default for where the output usually ends up. `ksui` defaults to
+`yaml` because manifests get committed to repositories, and records the departure
+from kubeseal's `json` in the contract.
 
-Your schema. Design principles:
-- Top-level object with `version` field for future evolution
-- Consistent field naming (snake_case for terraform ecosystem)
-- Include metadata: timestamp, source command, input file
+### When editing in place, keep the shape you were handed
+
+`ksui merge` defaults `--format` to neither. A file that arrived as YAML leaves as
+YAML, so rotating one key never reformats the whole manifest in a diff.
+
+### If you do design a schema
+
+- Top-level object with a `version` field for future evolution
+- Consistent field naming, matching the ecosystem the output will be read in
 - Errors as structured objects, not strings
 - NDJSON for streaming operations (one JSON object per line)
 
