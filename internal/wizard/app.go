@@ -134,6 +134,12 @@ func (a *app) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case returnMsg:
+		if a.canGoBack() {
+			return a, a.goBack()
+		}
+		return a, nil
+
 	case finishedMsg:
 		a.quitting = true
 		a.state.outcome = typed.outcome
@@ -241,6 +247,15 @@ func (a *app) footer(current step) string {
 		keys += "   esc back"
 	}
 	return keys + "   ctrl+c quit"
+}
+
+// returnMsg leaves the current screen, for a step that has finished what it was
+// opened to do. Without it a finished screen would stay in the stack, and going
+// back would land on a question that has already been answered and closed.
+type returnMsg struct{}
+
+func returnToPrevious() tea.Cmd {
+	return func() tea.Msg { return returnMsg{} }
 }
 
 // finishedMsg ends the wizard, reporting what was done.

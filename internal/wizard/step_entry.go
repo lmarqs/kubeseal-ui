@@ -149,7 +149,7 @@ func (s *entryStep) updateValue(message tea.Msg) (step, tea.Cmd) {
 	}
 
 	s.finished = true
-	return newEntriesStep(s.state), nil
+	return s, returnToPrevious()
 }
 
 // buildValueForm asks for the key, unless replacing a value, and for the value in

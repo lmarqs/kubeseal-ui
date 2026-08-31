@@ -304,3 +304,43 @@ func TestEscapeAbandonsTheQuestionOfWhereToSave(t *testing.T) {
 		t.Fatalf("the menu did not come back:\n%q", body)
 	}
 }
+
+func TestAddingAnEntryLeavesNoDeadScreenBehind(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.draft.Entries.Scrub()
+	entries := newEntriesStep(wizardState)
+	scope := newScopeStep(wizardState)
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{scope, entries}
+
+	for _, key := range []string{"FIRST", "SECOND"} {
+		send(application, press("a"))
+
+		adding, ok := application.current().(*entryStep)
+		if !ok {
+			t.Fatalf("pressing a led to %T, want the entry screen", application.current())
+		}
+		adding.key = key
+		adding.typed = "value"
+		confirm(application) // type it in
+		confirm(application) // key
+		confirm(application) // value
+	}
+
+	if wizardState.draft.Entries.Len() != 2 {
+		t.Fatalf("entries = %d, want the two that were added", wizardState.draft.Entries.Len())
+	}
+	if _, ok := application.current().(*entriesStep); !ok {
+		t.Fatalf("adding entries left %T on screen, want the list", application.current())
+	}
+	if len(application.stack) != 2 {
+		t.Errorf("the screen stack grew to %d; every entry left a screen behind",
+			len(application.stack))
+	}
+
+	goBack(application)
+
+	if _, ok := application.current().(*scopeStep); !ok {
+		t.Fatalf("esc led to %T, want the question before the list", application.current())
+	}
+}
