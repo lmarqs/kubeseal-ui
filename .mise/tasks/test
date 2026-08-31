@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run all unit tests with race detection"
+set -euo pipefail
+CGO_ENABLED=1 go test -race ./...

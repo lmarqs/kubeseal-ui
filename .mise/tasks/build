@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Build the ksui binary into ./ksui"
+set -euo pipefail
+go build -o ksui ./cmd/ksui

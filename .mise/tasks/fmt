@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Format Go sources"
+set -euo pipefail
+golangci-lint fmt
+go mod tidy

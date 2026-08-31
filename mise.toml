@@ -1,0 +1,8 @@
+[tools]
+go = "1.26.7"
+golangci-lint = "2"
+goreleaser = "2"
+node = "22"
+
+[env]
+CGO_ENABLED = "0"
