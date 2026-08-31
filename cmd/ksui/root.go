@@ -24,7 +24,7 @@ func newRootCommand() *cobra.Command {
 		Use:   "ksui",
 		Short: "Create Bitnami SealedSecrets",
 		Long:  rootLongHelp,
-		Args:  noArguments,
+		Args:  noArguments("describe the secret with flags"),
 		// main() reports errors so exit codes and hints stay consistent.
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -55,9 +55,13 @@ func newRootCommand() *cobra.Command {
 	return root
 }
 
-func noArguments(_ *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		return usageErrorf("describe the secret with flags", "unexpected argument %q", args[0])
+// noArguments rejects positional arguments as a usage error, so a command that
+// takes none exits 2 with a hint like every other correctable mistake.
+func noArguments(hint string) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return usageErrorf(hint, "unexpected argument %q", args[0])
+		}
+		return nil
 	}
-	return nil
 }

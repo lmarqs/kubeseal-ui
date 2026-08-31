@@ -66,6 +66,7 @@ type result struct {
 	stdout   string
 	stderr   string
 	exitCode int
+	hint     string
 }
 
 // runCommand executes ksui with args, isolated from the real terminal.
@@ -81,7 +82,12 @@ func runCommand(t *testing.T, stdin io.Reader, args ...string) result {
 
 	err := command.Execute()
 
-	return result{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCodeOf(err)}
+	return result{
+		stdout:   stdout.String(),
+		stderr:   stderr.String(),
+		exitCode: exitCodeOf(err),
+		hint:     hintOf(err),
+	}
 }
 
 func TestSealingWritesTheSealedSecretToStdoutAndNothingElse(t *testing.T) {
@@ -218,16 +224,18 @@ func TestMissingOrInvalidInputExitsWithTheUsageCode(t *testing.T) {
 	certificate := certificateFile(t)
 
 	cases := map[string][]string{
-		"no name":           {"--cert", certificate, "--namespace", "p", "--from-literal", "a=1"},
-		"no entries":        {"--cert", certificate, "--namespace", "p", "--name", "x"},
-		"unknown format":    {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "a=1", "-o", "xml"},
-		"invalid key":       {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "bad key=1"},
-		"invalid name":      {"--cert", certificate, "-n", "p", "--name", "UPPER", "--from-literal", "a=1"},
-		"malformed literal": {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "novalue"},
-		"missing file":      {"--cert", certificate, "-n", "p", "--name", "x", "--from-file", "a=/nope/missing"},
-		"unknown scope":     {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "a=1", "--scope", "wat"},
-		"unknown flag":      {"--nope"},
-		"stray argument":    {"extra"},
+		"no name":                   {"--cert", certificate, "--namespace", "p", "--from-literal", "a=1"},
+		"no entries":                {"--cert", certificate, "--namespace", "p", "--name", "x"},
+		"unknown format":            {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "a=1", "-o", "xml"},
+		"invalid key":               {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "bad key=1"},
+		"invalid name":              {"--cert", certificate, "-n", "p", "--name", "UPPER", "--from-literal", "a=1"},
+		"malformed literal":         {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "novalue"},
+		"missing file":              {"--cert", certificate, "-n", "p", "--name", "x", "--from-file", "a=/nope/missing"},
+		"unknown scope":             {"--cert", certificate, "-n", "p", "--name", "x", "--from-literal", "a=1", "--scope", "wat"},
+		"unknown flag":              {"--nope"},
+		"stray argument":            {"extra"},
+		"stray argument to version": {"version", "extra"},
+		"unknown flag on version":   {"version", "--nope"},
 	}
 
 	for name, args := range cases {
@@ -239,6 +247,9 @@ func TestMissingOrInvalidInputExitsWithTheUsageCode(t *testing.T) {
 			}
 			if got.stdout != "" {
 				t.Errorf("stdout = %q, want nothing on failure", got.stdout)
+			}
+			if got.hint == "" {
+				t.Errorf("no hint given; a usage error has to say what to change")
 			}
 		})
 	}
