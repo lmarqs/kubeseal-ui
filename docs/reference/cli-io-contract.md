@@ -42,15 +42,25 @@ usage error instead, so scripted runs never block on a prompt.
 
 These keep kubeseal's names and meanings, so existing habits and scripts carry
 over: `--cert`, `--controller-name`, `--controller-namespace`, `--scope`,
-`--allow-empty-data`, `--validate`, `--from-file`, `--name`, `--kubeconfig`,
-`--fetch-cert`, `-o`/`--format` (the output *format*), and
-`-w`/`--sealed-secret-file` (the output *path*).
+`--allow-empty-data`, `--validate`, `--kubeconfig`, `--fetch-cert`,
+`-o`/`--format` (the output *format*), and `-w`/`--sealed-secret-file` (the
+output *path*).
 
 One deliberate difference: `--format` defaults to `yaml` rather than kubeseal's
 `json`, because the output usually ends up committed to a repository.
 
-Flags kubeseal does not define: `--ci`, `--context`, `--from-literal`, and
-`-n`/`--namespace`, the last two following kubectl's naming.
+`--name` and `--from-file` keep kubeseal's spelling and syntax without its
+restriction: kubeseal accepts both only alongside `--raw`, and `ksui` has no
+equivalent of `--raw`.
+
+Flags kubeseal does not define: `--ci` and `--from-literal`.
+
+`--context` and `-n`/`--namespace` exist in both, spelled the way kubectl spells
+them, but they do not mean the same thing. kubeseal binds them as kubeconfig
+overrides. In `ksui`, `--context` still picks the kubeconfig context, while
+`--namespace` names the namespace the secret is sealed for — the one the strict
+and namespace-wide scopes are bound to. Left out, it falls back to the namespace
+the active context declares.
 
 ## Keeping values out of shell history
 
