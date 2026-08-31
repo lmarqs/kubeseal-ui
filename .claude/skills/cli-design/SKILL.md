@@ -110,18 +110,27 @@ defining it beats accepting it and then explaining why it was ignored.
 
 ## 4. Exit Codes
 
-Follow the conventions of the wrapped tool:
+Every code is part of the published contract, so each one names a distinct
+outcome a script can branch on:
 
 | Code | Meaning | When |
 |------|---------|------|
-| `0` | Success | Operation completed, or no changes detected |
-| `1` | Error | Any failure (parse, runtime, permission) |
-| `2` | Changes present | `plan` command detected drift (terraform convention) |
+| `0` | Success | The secret was sealed, or the wizard was left without sealing |
+| `1` | Error | A runtime failure: unreachable controller, RBAC denial, unwritable path |
+| `2` | Usage | The command line needs changing: unknown flag, missing `--name`, no entries |
+| `3` | Validation failed | The controller could not decrypt the result (`--validate`) |
+| `130` | Interrupted | A signal cancelled an operation in flight (128 + SIGINT) |
 
 Rules:
-- Exit 2 must ONLY appear in plan-related code paths
-- Framework/parser errors → exit 1
-- Signal interrupts → exit 130 (128 + SIGINT)
+- Separate "you must fix the command line" from "the world did not cooperate".
+  Only the first is worth a `hint:`; only the second is worth retrying.
+- Give the code and its hint a home in the error value, not in the text. A
+  `codedError{code, hint, err}` lets the top-level handler report both without
+  parsing message strings.
+- Parser errors are usage errors. A framework that exits 1 on an unknown flag is
+  contradicting the table, so route its errors through the same type.
+- Exit 0 does not imply every check ran. When `--validate` is skipped because no
+  controller was reachable, the warning on stderr is what distinguishes the two.
 
 ---
 
