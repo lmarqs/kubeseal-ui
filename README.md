@@ -126,7 +126,8 @@ mise run check     # go vet, golangci-lint, goreleaser check
 mise run fmt       # format sources and tidy go.mod
 ```
 
-The ADRs in [docs/adr](docs/adr) record the design decisions.
+[docs](docs/README.md) indexes the reference material and the ADRs that record the
+design decisions.
 
 ## License
 
