@@ -27,6 +27,9 @@ type Draft struct {
 	Name      Name
 	Type      Type
 	Entries   Entries
+	// AllowEmpty permits sealing a secret with no entries, which is otherwise
+	// assumed to be a mistake.
+	AllowEmpty bool
 }
 
 // Build renders the draft as a Kubernetes Secret. Sealing scope is applied later
@@ -41,7 +44,7 @@ func Build(draft Draft) (*corev1.Secret, error) {
 	if draft.Namespace == "" {
 		return nil, errors.New("namespace is required")
 	}
-	if draft.Entries.Len() == 0 {
+	if draft.Entries.Len() == 0 && !draft.AllowEmpty {
 		return nil, ErrNoEntries
 	}
 

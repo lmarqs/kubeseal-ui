@@ -39,7 +39,14 @@ type Certificate struct {
 	Source string
 	// RetrievedAt is when this copy was obtained.
 	RetrievedAt time.Time
+	// FetchError is set when the controller could not be reached and this copy
+	// came from the cache instead. Sealing still works; validation does not.
+	FetchError error
 }
+
+// Stale reports whether this certificate was served from the cache after the
+// controller could not be reached.
+func (c Certificate) Stale() bool { return c.FetchError != nil }
 
 // ParseCertificate reads an RSA public key from a PEM certificate. Certificates
 // that have expired are rejected, because the controller would refuse them too.

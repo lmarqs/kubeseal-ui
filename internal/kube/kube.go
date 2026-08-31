@@ -4,6 +4,7 @@ package kube
 
 import (
 	"errors"
+	"fmt"
 
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -41,4 +42,14 @@ func New(kubeconfigPath, contextName string) *Client {
 // kubeseal.ClientConfig.
 func (c *Client) ClientConfig() clientcmd.ClientConfig {
 	return c.config
+}
+
+// Server reports the API server address of the selected context, which identifies
+// the cluster for caching purposes.
+func (c *Client) Server() (string, error) {
+	restConfig, err := c.config.ClientConfig()
+	if err != nil {
+		return "", fmt.Errorf("resolving cluster address: %w", err)
+	}
+	return restConfig.Host, nil
 }

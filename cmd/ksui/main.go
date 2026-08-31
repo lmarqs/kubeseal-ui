@@ -28,5 +28,8 @@ func run() int {
 
 	// Diagnostics go to stderr so stdout carries only sealed-secret data.
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	return exitError
+	if hint := hintOf(err); hint != "" {
+		fmt.Fprintf(os.Stderr, "hint: %s\n", hint)
+	}
+	return exitCodeOf(err)
 }
