@@ -26,6 +26,9 @@ type namespaceStep struct {
 	typed   string
 	failure error
 	notice  string
+	// typing is set when the namespace is entered as text rather than picked, which
+	// changes which keys do anything.
+	typing  bool
 	loading bool
 	spinner spinner
 	asked   bool
@@ -38,10 +41,14 @@ func newNamespaceStep(state *state) *namespaceStep {
 func (s *namespaceStep) Heading() string { return "Which namespace?" }
 
 func (s *namespaceStep) Footer() string {
-	if s.form == nil {
+	switch {
+	case s.form == nil:
 		return ""
+	case s.typing:
+		return "enter confirm"
+	default:
+		return "↑/↓ choose   / filter   enter confirm"
 	}
-	return "↑/↓ choose   / filter   enter confirm"
 }
 
 func (s *namespaceStep) Init() tea.Cmd {
@@ -124,8 +131,17 @@ func (s *namespaceStep) Update(message tea.Msg) (step, tea.Cmd) {
 		s.form = form
 	}
 	if s.form.State == huh.StateCompleted {
+		// Choosing "type a namespace" swaps the picker for a text field rather than
+		// moving on with nothing.
+		if !s.typing && s.chosen == typeNamespaceOption {
+			s.typing = true
+			s.notice = ""
+			s.form = s.typedForm()
+			return s, s.form.Init()
+		}
+
 		chosen := s.chosen
-		if chosen == typeNamespaceOption || chosen == "" {
+		if s.typing {
 			chosen = s.typed
 		}
 		return newNameStep(s.state), s.accept(chosen)
@@ -146,16 +162,13 @@ func (s *namespaceStep) accept(namespace string) tea.Cmd {
 func (s *namespaceStep) build(namespaces []string, err error) {
 	if err != nil {
 		s.noticeFor(err)
-		s.form = huh.NewForm(huh.NewGroup(
-			huh.NewInput().
-				Title("Namespace").
-				Value(&s.typed).
-				Validate(validateNamespace),
-		)).WithShowHelp(false).WithShowErrors(true)
+		s.typing = true
+		s.form = s.typedForm()
 		s.chosen = typeNamespaceOption
 		return
 	}
 
+	s.typing = false
 	options := make([]huh.Option[string], 0, len(namespaces)+1)
 	for _, namespace := range namespaces {
 		options = append(options, huh.NewOption(namespace, namespace))
@@ -169,6 +182,22 @@ func (s *namespaceStep) build(namespaces []string, err error) {
 			Filtering(true).
 			Value(&s.chosen),
 	)).WithShowHelp(false).WithShowErrors(false)
+}
+
+// typedForm asks for a namespace as free text, for when it cannot be listed or
+// does not exist yet.
+func (s *namespaceStep) typedForm() *huh.Form {
+	if s.typed == "" {
+		s.typed = s.state.draft.Namespace
+	}
+
+	return huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Namespace").
+			Placeholder("payments").
+			Value(&s.typed).
+			Validate(validateNamespace),
+	)).WithShowHelp(false).WithShowErrors(true)
 }
 
 // preselected favours the namespace already chosen, so returning to this screen

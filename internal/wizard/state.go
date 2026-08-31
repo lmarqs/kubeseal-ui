@@ -18,6 +18,9 @@ type state struct {
 
 	draft secret.Draft
 	scope ssv1alpha1.SealingScope
+	// scopeChosen distinguishes a deliberate choice of the strict default from not
+	// having been asked yet, so the breadcrumb never claims an unmade decision.
+	scopeChosen bool
 
 	controllers []seal.Controller
 	controller  seal.Controller

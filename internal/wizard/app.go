@@ -165,7 +165,7 @@ func (a *app) breadcrumb() string {
 	if a.state.draft.Name != "" {
 		parts = append(parts, "secret "+a.state.draft.Name.String())
 	}
-	if len(parts) > 0 {
+	if a.state.scopeChosen {
 		parts = append(parts, "scope "+a.state.scope.String())
 	}
 	if count := a.state.draft.Entries.Len(); count > 0 {

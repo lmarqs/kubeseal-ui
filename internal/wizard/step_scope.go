@@ -67,6 +67,7 @@ func (s *scopeStep) Update(message tea.Msg) (step, tea.Cmd) {
 	}
 	if s.form.State == huh.StateCompleted {
 		s.state.scope = s.chosen
+		s.state.scopeChosen = true
 		s.state.invalidate()
 		return newEntriesStep(s.state), nil
 	}

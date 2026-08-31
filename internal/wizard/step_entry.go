@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
@@ -56,13 +57,14 @@ func (s *entryStep) Heading() string {
 }
 
 func (s *entryStep) Footer() string {
-	if s.valueForm == nil {
+	switch {
+	case s.valueForm == nil:
 		return "↑/↓ choose   enter confirm"
+	case s.source == sourceMultiline:
+		return "enter new line   ctrl+d done"
+	default:
+		return "enter next field"
 	}
-	if s.source == sourceMultiline {
-		return "ctrl+d finish"
-	}
-	return "tab next field   enter confirm"
 }
 
 func (s *entryStep) Init() tea.Cmd {
@@ -168,7 +170,25 @@ func (s *entryStep) buildValueForm() {
 
 	s.valueForm = huh.NewForm(huh.NewGroup(fields...)).
 		WithShowHelp(false).
-		WithShowErrors(true)
+		WithShowErrors(true).
+		WithKeyMap(s.keyMap())
+}
+
+// keyMap makes a multiline value behave the way a text editor does. By default a
+// newline submits the field, which would cut a pasted certificate off at its first
+// line; here newline inserts a line and ctrl+d finishes.
+func (s *entryStep) keyMap() *huh.KeyMap {
+	keys := huh.NewDefaultKeyMap()
+	if s.source != sourceMultiline {
+		return keys
+	}
+
+	done := key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "done"))
+	keys.Text.NewLine = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "new line"))
+	keys.Text.Next = done
+	keys.Text.Submit = done
+
+	return keys
 }
 
 // commit validates the answers and records the entry.

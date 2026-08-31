@@ -11,6 +11,7 @@ import (
 	ssv1alpha1 "github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
 	"github.com/bitnami/sealed-secrets/pkg/crypto"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 
 	"github.com/lmarqs/kubeseal-ui/internal/kube"
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
@@ -118,6 +119,7 @@ func testState(t *testing.T, key *rsa.PrivateKey) *state {
 	wizardState.draft.Namespace = "payments"
 	wizardState.draft.Name = name
 	wizardState.draft.Type = secret.TypeOpaque
+	wizardState.scopeChosen = true
 	wizardState.draft.Entries.Set(entry(t, "DB_PASSWORD", "hunter2"))
 
 	return wizardState
@@ -606,5 +608,42 @@ func TestDiscoveryFailureLeavesTheDefaultControllerInPlace(t *testing.T) {
 
 	if wizardState.controller != seal.DefaultController() {
 		t.Errorf("controller = %v, want the default after discovery failed", wizardState.controller)
+	}
+}
+
+func TestTheBreadcrumbDoesNotClaimAScopeBeforeItIsChosen(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.scopeChosen = false
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newScopeStep(wizardState)}
+
+	breadcrumb := application.breadcrumb()
+
+	if strings.Contains(breadcrumb, "scope") {
+		t.Errorf("the breadcrumb claims a scope that has not been chosen:\n%s", breadcrumb)
+	}
+	if !strings.Contains(breadcrumb, "payments") {
+		t.Errorf("the answers already given are missing:\n%s", breadcrumb)
+	}
+}
+
+func TestChoosingAScopeRecordsThatItWasAsked(t *testing.T) {
+	wizardState := testState(t, testKey(t))
+	wizardState.scopeChosen = false
+	step := newScopeStep(wizardState)
+	step.Init()
+	step.chosen = ssv1alpha1.NamespaceWideScope
+
+	step.form.State = huh.StateCompleted
+	next, _ := step.Update(nil)
+
+	if !wizardState.scopeChosen {
+		t.Error("the scope was not recorded as chosen")
+	}
+	if wizardState.scope != ssv1alpha1.NamespaceWideScope {
+		t.Errorf("scope = %v, want namespace-wide", wizardState.scope)
+	}
+	if _, ok := next.(*entriesStep); !ok {
+		t.Errorf("choosing a scope led to %T, want the entries screen", next)
 	}
 }
