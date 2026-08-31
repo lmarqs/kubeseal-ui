@@ -25,7 +25,8 @@ That build turned up the following:
   deferred-loading client configuration can go straight to the sealing functions.
 - `huh` v1.0.0 requires the Bubble Tea v1 line, and compiles cleanly against
   `bubbles` v1.0.0 even though it pins an earlier pseudo-version itself.
-- The resulting binary is roughly 35 MB, most of it client-go.
+- The resulting binary is roughly 40 MB, or 28 MB once the release build strips
+  the symbol table and DWARF with `-s -w`. Most of that is client-go.
 
 ## Decision
 
