@@ -344,3 +344,72 @@ func TestAddingAnEntryLeavesNoDeadScreenBehind(t *testing.T) {
 		t.Fatalf("esc led to %T, want the question before the list", application.current())
 	}
 }
+
+// TestEveryFormScreenCanBeReturnedTo submits each screen's form the way answering
+// it does, then returns to it, since that is the moment a spent form used to
+// leave the screen blank and unusable.
+func TestEveryFormScreenCanBeReturnedTo(t *testing.T) {
+	key := testKey(t)
+
+	screens := map[string]func() (step, *huh.Form){
+		"cluster": func() (step, *huh.Form) {
+			wizardState := testState(t, key)
+			wizardState.options.Clusters = fakeClusters{
+				contexts: []kube.Context{{Name: "prod"}}, current: "prod",
+			}
+			current := newContextStep(wizardState)
+			current.contexts, current.current, current.loaded = []kube.Context{{Name: "prod"}}, "prod", true
+			current.buildForm()
+			return current, current.form
+		},
+		"namespace": func() (step, *huh.Form) {
+			current := newNamespaceStep(testState(t, key))
+			current.namespaces, current.pickable, current.loaded = []string{"payments"}, true, true
+			current.rebuild()
+			return current, current.form
+		},
+		"kind of secret": func() (step, *huh.Form) {
+			current := newTypeStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+		"name": func() (step, *huh.Form) {
+			current := newNameStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+		"scope": func() (step, *huh.Form) {
+			current := newScopeStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+		"registry": func() (step, *huh.Form) {
+			current := newDockerStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+		"certificate": func() (step, *huh.Form) {
+			current := newTLSStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+		"what now": func() (step, *huh.Form) {
+			current := newActionsStep(testState(t, key))
+			current.Init()
+			return current, current.form
+		},
+	}
+
+	for name, build := range screens {
+		t.Run(name, func(t *testing.T) {
+			current, form := build()
+			form.State = huh.StateCompleted
+
+			current.Init()
+
+			if body := strings.TrimSpace(current.View()); body == "" {
+				t.Error("the screen came back with nothing on it")
+			}
+		})
+	}
+}
