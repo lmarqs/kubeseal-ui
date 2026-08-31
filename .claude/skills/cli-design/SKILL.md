@@ -77,35 +77,34 @@ while the wizard is still on screen.
 
 ## 3. Flag Design
 
-### Compatibility flags (inherited from wrapped tool)
+### Compatibility flags (named after the reference tool)
 
-- Accept both single-dash (`-json`) and double-dash (`--json`) for terraform flags
-- Normalize internally: `normalizeArgs()` converts to double-dash for the parser
-- Unknown flags pass through unchanged (future-proof)
+- Keep the spelling and the short form: `-o`/`--format`, `-w`/`--sealed-secret-file`
+- Keep the meaning too, or document the difference where one is unavoidable
+- Borrow shorthands from the ecosystem, not just the one tool: `-n` is
+  `--namespace` because that is how kubectl spells it
 
 ### Novel flags (your tool's additions)
 
-- Always double-dash only: `--ci`, `--project`, `--macro`
-- Use names the wrapped tool hasn't claimed
-- Boolean flags never consume the next argument
-- Value flags consume next arg only when no `=` separator
+- Always double-dash only: `--ci`, `--from-literal`, `--remove`
+- Use names the reference tool hasn't claimed
+- Repeatable flags are declared as arrays, so `--from-file` twice means two keys
 
 ### Flag categories
 
 | Category | Examples | Rule |
 |----------|----------|------|
-| **Value flags** | `--target X`, `--var-file X` | Consume next arg when no `=` |
-| **Bool flags** | `--json`, `--destroy` | Never consume next arg |
-| **Passthrough** | Everything after `--` | Stored as ExtraArgs, forwarded to wrapped tool |
+| **Value flags** | `--name X`, `--cert X` | One value, last occurrence wins |
+| **Repeatable** | `--from-literal`, `--from-file`, `--remove` | Accumulate; order is preserved |
+| **Bool flags** | `--validate`, `--fetch-cert`, `--ci` | Never consume the next argument |
 
-### Passthrough ordering
+### Per-command flag sets
 
-```
-user input → splitPassthrough("--") → normalizeArgs(before) → parse
-                                    → store ExtraArgs(after)
-```
-
-`splitPassthrough` MUST run before `normalizeArgs`. The passthrough section is opaque — never normalize or validate it.
+A subcommand takes only the flags it can honour. `ksui merge` reads the name,
+namespace, type and sealing scope out of the file it was given, so it does not
+offer `--name`, `--namespace` or `--scope` at all — changing any of them would
+make the values already sealed in that file unreadable. Rejecting a flag by not
+defining it beats accepting it and then explaining why it was ignored.
 
 ---
 
