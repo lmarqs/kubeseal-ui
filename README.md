@@ -7,12 +7,9 @@ Go module, so the `kubeseal` binary is not required.
 
 ## Status
 
-Early development. Sealing from the command line works today, including
-certificate discovery, caching and validation. The interactive wizard — pick a
-cluster and namespace, then enter secret values one at a time with the option to
-list, edit and remove them before sealing — is being built next, along with
-applying to the cluster, docker-registry and TLS secrets, and merging into an
-existing sealed secret.
+Working for Opaque secrets, interactively and from the command line. Still to
+come: guided flows for docker-registry and TLS secrets, and merging new values
+into an existing sealed secret file.
 
 ## Install
 
@@ -24,6 +21,23 @@ go build -o ksui ./cmd/ksui
 ```
 
 ## Usage
+
+Run it with no arguments to be walked through the questions:
+
+```sh
+ksui
+```
+
+It asks which cluster and namespace, what the secret is called and how it should
+be scoped, then collects the values one at a time — each of which can be typed,
+read from a file, or entered over several lines. Values are masked and listed only
+by key, where they came from and how large they are. `esc` goes back to any earlier
+question without losing the entries already given.
+
+Once sealed, the manifest is shown in full and you can check that the controller
+can decrypt it, apply it to the cluster, save it, or print it.
+
+### From the command line
 
 Seal a secret against the controller in the current cluster:
 
