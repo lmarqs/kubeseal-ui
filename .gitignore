@@ -3,3 +3,4 @@
 *.pem
 *-sealed.yaml
 node_modules/
+/.claude/worktrees/
