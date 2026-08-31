@@ -201,7 +201,8 @@ ksui --name db-creds -n payments --from-literal a=b | kubectl apply -f -
 When stdin is not a TTY:
 - Skip interactive modes (TUI, prompts, confirmations)
 - Render output and exit immediately
-- If interaction is required → error with `hint: use --auto-approve or provide input via flags`
+- If interaction is required → name the missing input and how to supply it:
+  `hint: pass --name to say what the secret is called`
 
 When stdout is not a TTY:
 - Suppress ANSI color/formatting in stdout
@@ -258,14 +259,15 @@ Rules:
 |---|-------------|-----|
 | 1 | **Data on stderr** | Data always goes to stdout, even errors about data |
 | 2 | **ANSI in piped output** | Detect TTY, strip when piped |
-| 3 | **Novel flag collides with wrapped tool** | Check wrapped tool's flag namespace before naming |
+| 3 | **Novel flag collides with the reference tool** | Check its flag namespace before naming |
 | 4 | **Spinner on stdout** | Spinner goes to stderr, gated by TTY check |
 | 5 | **Blocking stdin without signal** | Show "reading from stdin..." or error if no pipe |
 | 6 | **Exit 0 on error** | Always exit non-zero on failure |
-| 7 | **Different JSON schema in `-json` mode** | `-json` = wrapped tool's format exactly |
+| 7 | **Reshaping a schema you do not own** | Render the API type as-is; the format flag picks the encoding, not the fields |
 | 8 | **Interactive prompts in piped mode** | Detect non-TTY stdin, use flags instead |
 | 9 | **Inconsistent flag naming** | Pick one style (double-dash for novel) and stick to it |
-| 10 | **Swallowing wrapped tool's stderr** | Forward it unless you're explicitly replacing the output |
+| 10 | **A shared flag name that quietly means something else** | Keep the meaning, or document the difference where it is unavoidable |
+| 11 | **Silently skipping a check the caller asked for** | Warn on stderr, so exit 0 is never mistaken for "verified" |
 
 ---
 
@@ -273,14 +275,16 @@ Rules:
 
 Before shipping a CLI command:
 
-- [ ] `cmd | jq '.'` works (stdout is clean JSON in -json mode)
+- [ ] `cmd -o json | jq '.'` works (stdout is clean JSON)
 - [ ] `cmd > /dev/null` produces no ANSI artifacts
 - [ ] `cmd 2>/dev/null` suppresses all progress (only data on stdout)
+- [ ] `cmd > out.yaml` leaves the file holding the manifest alone
 - [ ] Works in `set -e` scripts (correct exit codes)
-- [ ] `--ci` produces zero bytes on stderr
+- [ ] `--ci` and `CI=1` both refuse to prompt, and say what is missing
 - [ ] Non-TTY stdin handled gracefully (error or read, no hang)
-- [ ] `-json` output is byte-compatible with wrapped tool
-- [ ] Novel `--json` output is stable and versioned
+- [ ] Every flag shared with the reference tool has the same meaning, or the
+      difference is written down
+- [ ] Output another tool consumes is accepted by that tool (`kubectl apply -f -`)
 - [ ] Error messages include enough context to debug without re-running
 - [ ] `--help` output goes to stdout (convention for piping to pager)
 
@@ -295,8 +299,8 @@ Tools with excellent CLI UX to study:
 | **ripgrep** | Perfect output channel separation, smart TTY detection |
 | **jq** | Pure filter pattern, composable, predictable |
 | **gh (GitHub CLI)** | Wraps API elegantly, `--json` with field selection |
-| **kubectl** | Multiple output formats (`-o json/yaml/wide/name`) |
-| **terraform** | Flag conventions, exit codes, `-json` streaming |
+| **kubectl** | Multiple output formats (`-o json/yaml/wide/name`), `-f -` for stdin |
+| **kubeseal** | The flag surface this tool matches, and where it deliberately does not |
 | **exa/eza** | Graceful color degradation, `--no-color` respect |
 | **fd** | Smart defaults that differ from `find`, great pipe behavior |
 
