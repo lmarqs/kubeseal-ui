@@ -76,7 +76,15 @@ func runMerge(cmd *cobra.Command, o *options) error {
 		return err
 	}
 
-	incoming, err := o.incomingSecret(cmd, existing)
+	// The built secret shares its value buffers with the draft, so the draft is
+	// scrubbed here, once sealing is over, rather than where it was assembled.
+	draft, err := o.mergeDraft(cmd, existing)
+	defer draft.Entries.Scrub()
+	if err != nil {
+		return err
+	}
+
+	incoming, err := incomingSecret(draft)
 	if err != nil {
 		return err
 	}
@@ -104,16 +112,17 @@ func runMerge(cmd *cobra.Command, o *options) error {
 	return nil
 }
 
-// incomingSecret builds the secret holding the new values, or nil when the run only
-// removes keys.
-func (o *options) incomingSecret(cmd *cobra.Command, existing seal.Existing) (*corev1.Secret, error) {
+// mergeDraft assembles the new values, taking the file's own identity so the
+// encryption label matches what is already sealed there. The draft is empty when the
+// run only removes keys.
+func (o *options) mergeDraft(cmd *cobra.Command, existing seal.Existing) (secret.Draft, error) {
 	if len(o.entries.literals) == 0 && len(o.entries.files) == 0 {
-		return nil, nil
+		return secret.Draft{}, nil
 	}
 
 	name, err := secret.NewName(existing.Name)
 	if err != nil {
-		return nil, usageError(err, "the file's metadata.name is not a valid secret name")
+		return secret.Draft{}, usageError(err, "the file's metadata.name is not a valid secret name")
 	}
 
 	draft := secret.Draft{
@@ -121,15 +130,23 @@ func (o *options) incomingSecret(cmd *cobra.Command, existing seal.Existing) (*c
 		Name:      name,
 		Type:      existing.Type,
 	}
-	defer draft.Entries.Scrub()
 
 	if err := o.collectLiterals(&draft); err != nil {
-		return nil, err
+		return draft, err
 	}
 	if err := o.collectFiles(&draft, cmd.InOrStdin()); err != nil {
-		return nil, err
+		return draft, err
 	}
 
+	return draft, nil
+}
+
+// incomingSecret renders the new values as a Secret, or nothing when the run only
+// removes keys.
+func incomingSecret(draft secret.Draft) (*corev1.Secret, error) {
+	if draft.Entries.Len() == 0 {
+		return nil, nil
+	}
 	return secret.Build(draft)
 }
 

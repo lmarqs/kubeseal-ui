@@ -68,6 +68,29 @@ func TestMergingAddsReplacesAndRemovesKeysInPlace(t *testing.T) {
 	}
 }
 
+func TestMergingSealsTheValueThatWasGiven(t *testing.T) {
+	certificate, key := certificateAndKey(t)
+	path := sealedFileFor(t, certificate, "DB_PASSWORD=hunter2")
+
+	got := runCommand(t, nil, "merge", path,
+		"--cert", certificate,
+		"--from-literal", "DB_PASSWORD=rotated",
+		"--from-literal", "API_TOKEN=t0ken",
+	)
+
+	if got.exitCode != exitOK {
+		t.Fatalf("exit code = %d, want %d\nstderr: %s", got.exitCode, exitOK, got.stderr)
+	}
+
+	decrypted := unsealed(t, []byte(contentsOf(t, path)), key)
+	if value := string(decrypted.Data["DB_PASSWORD"]); value != "rotated" {
+		t.Errorf("DB_PASSWORD decrypts to %q, want the new value", value)
+	}
+	if value := string(decrypted.Data["API_TOKEN"]); value != "t0ken" {
+		t.Errorf("API_TOKEN decrypts to %q, want the value that was given", value)
+	}
+}
+
 func TestMergingKeepsTheFilesNameNamespaceAndScope(t *testing.T) {
 	certificate := certificateFile(t)
 	path := sealedFileFor(t, certificate, "DB_PASSWORD=hunter2")

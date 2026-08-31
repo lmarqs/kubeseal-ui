@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"encoding/pem"
 	"io"
 	"os"
@@ -10,13 +11,26 @@ import (
 	"testing"
 	"time"
 
+	ssv1alpha1 "github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
 	"github.com/bitnami/sealed-secrets/pkg/crypto"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/yaml"
 )
 
 // certificateFile writes a controller-style certificate for the CLI to seal with.
 func certificateFile(t *testing.T) string {
 	t.Helper()
-	_, certificate, err := crypto.GeneratePrivateKeyAndCert(2048, time.Hour, "ksui-test")
+	path, _ := certificateAndKey(t)
+	return path
+}
+
+// certificateAndKey writes a certificate and hands back the private key that goes
+// with it, so a test can decrypt what the CLI sealed and check the value that
+// actually reached the controller.
+func certificateAndKey(t *testing.T) (string, *rsa.PrivateKey) {
+	t.Helper()
+	key, certificate, err := crypto.GeneratePrivateKeyAndCert(2048, time.Hour, "ksui-test")
 	if err != nil {
 		t.Fatalf("generating certificate: %v", err)
 	}
@@ -27,7 +41,24 @@ func certificateFile(t *testing.T) string {
 		t.Fatalf("writing certificate: %v", err)
 	}
 
-	return path
+	return path, key
+}
+
+// unsealed decrypts a sealed secret the way the controller would.
+func unsealed(t *testing.T, rendered []byte, key *rsa.PrivateKey) *corev1.Secret {
+	t.Helper()
+
+	var sealed ssv1alpha1.SealedSecret
+	if err := yaml.Unmarshal(rendered, &sealed); err != nil {
+		t.Fatalf("parsing the sealed secret: %v\n%s", err, rendered)
+	}
+
+	secret, err := sealed.Unseal(scheme.Codecs, map[string]*rsa.PrivateKey{"controller": key})
+	if err != nil {
+		t.Fatalf("the controller could not decrypt the sealed secret: %v", err)
+	}
+
+	return secret
 }
 
 // result captures everything a single command run produced.
@@ -72,6 +103,24 @@ func TestSealingWritesTheSealedSecretToStdoutAndNothingElse(t *testing.T) {
 	}
 	if got.stderr != "" {
 		t.Errorf("stderr = %q, want nothing when the seal succeeds", got.stderr)
+	}
+}
+
+func TestSealingEncryptsTheValueThatWasGiven(t *testing.T) {
+	certificate, key := certificateAndKey(t)
+
+	got := runCommand(t, nil,
+		"--cert", certificate,
+		"--namespace", "payments",
+		"--name", "db-creds",
+		"--from-literal", "DB_PASSWORD=hunter2",
+	)
+
+	if got.exitCode != exitOK {
+		t.Fatalf("exit code = %d, want %d\nstderr: %s", got.exitCode, exitOK, got.stderr)
+	}
+	if value := string(unsealed(t, []byte(got.stdout), key).Data["DB_PASSWORD"]); value != "hunter2" {
+		t.Errorf("DB_PASSWORD decrypts to %q, want the value that was given", value)
 	}
 }
 
