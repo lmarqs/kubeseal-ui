@@ -3,6 +3,7 @@ package kube
 import (
 	"fmt"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -10,11 +11,14 @@ import (
 // that everything requiring network access sits behind a single seam.
 type Cluster struct {
 	clientset kubernetes.Interface
+	// dynamic reads and applies SealedSecrets, whose type this binary does not
+	// compile against. It may be nil, in which case those operations report why.
+	dynamic dynamic.Interface
 }
 
-// NewCluster wraps an existing clientset, which lets tests supply a fake.
-func NewCluster(clientset kubernetes.Interface) *Cluster {
-	return &Cluster{clientset: clientset}
+// NewCluster wraps existing clients, which lets tests supply fakes.
+func NewCluster(clientset kubernetes.Interface, dynamicClient dynamic.Interface) *Cluster {
+	return &Cluster{clientset: clientset, dynamic: dynamicClient}
 }
 
 // Connect builds a clientset for the context selected in the kubeconfig. It does
@@ -30,5 +34,10 @@ func (c *Client) Connect() (*Cluster, error) {
 		return nil, fmt.Errorf("creating Kubernetes client: %w", err)
 	}
 
-	return NewCluster(clientset), nil
+	dynamicClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("creating Kubernetes client: %w", err)
+	}
+
+	return NewCluster(clientset, dynamicClient), nil
 }

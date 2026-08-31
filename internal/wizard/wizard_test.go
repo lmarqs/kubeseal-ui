@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -645,5 +646,215 @@ func TestChoosingAScopeRecordsThatItWasAsked(t *testing.T) {
 	}
 	if _, ok := next.(*entriesStep); !ok {
 		t.Errorf("choosing a scope led to %T, want the entries screen", next)
+	}
+}
+
+// fakeApplier stands in for the cluster when applying.
+type fakeApplier struct {
+	supported     bool
+	supportedErr  error
+	existing      []string
+	found         bool
+	existingErr   error
+	applyErr      error
+	appliedSealed []byte
+	forced        bool
+	applyCalls    int
+}
+
+func (f *fakeApplier) Supported(context.Context) (bool, error) {
+	return f.supported, f.supportedErr
+}
+
+func (f *fakeApplier) Existing(context.Context, string, string) (bool, []string, error) {
+	return f.found, f.existing, f.existingErr
+}
+
+func (f *fakeApplier) Apply(_ context.Context, sealed []byte, force bool) error {
+	f.applyCalls++
+	f.appliedSealed, f.forced = sealed, force
+	return f.applyErr
+}
+
+func actionsWithApplier(t *testing.T, applier *fakeApplier) (*actionsStep, *state) {
+	t.Helper()
+	wizardState := testState(t, testKey(t))
+	wizardState.connection.Applier = applier
+	wizardState.sealed = []byte("kind: SealedSecret\n")
+	return newActionsStep(wizardState), wizardState
+}
+
+func TestApplyingIsOnlyOfferedWhenThereIsAClusterToApplyTo(t *testing.T) {
+	withApplier, _ := actionsWithApplier(t, &fakeApplier{supported: true})
+	without := newActionsStep(testState(t, testKey(t)))
+
+	if !offersApply(withApplier) {
+		t.Error("applying was not offered although a cluster is connected")
+	}
+	if offersApply(without) {
+		t.Error("applying was offered with no cluster to apply to")
+	}
+}
+
+func offersApply(step *actionsStep) bool {
+	for _, choice := range step.choices() {
+		if choice.Value == actionApply {
+			return true
+		}
+	}
+	return false
+}
+
+func TestApplyingToAClusterWithoutTheResourceExplainsWhyItCannot(t *testing.T) {
+	step, _ := actionsWithApplier(t, &fakeApplier{supported: false})
+
+	step.Update(planApply(step.state)())
+
+	if step.plan != nil {
+		t.Error("an apply was offered on a cluster that cannot take it")
+	}
+	if !strings.Contains(step.View(), "no SealedSecret resource") {
+		t.Errorf("the reason was not explained:\n%s", step.View())
+	}
+}
+
+func TestApplyingANewSecretSaysWhatItWillCreate(t *testing.T) {
+	step, _ := actionsWithApplier(t, &fakeApplier{supported: true})
+
+	step.Update(planApply(step.state)())
+
+	if step.plan == nil {
+		t.Fatal("no plan was produced")
+	}
+	view := step.View()
+	if !strings.Contains(view, "creates db-creds in payments") {
+		t.Errorf("the plan does not describe the change:\n%s", view)
+	}
+}
+
+func TestApplyingOverAnExistingSecretListsTheKeysItChanges(t *testing.T) {
+	applier := &fakeApplier{supported: true, found: true, existing: []string{"DB_PASSWORD", "OLD_TOKEN"}}
+	step, _ := actionsWithApplier(t, applier)
+
+	step.Update(planApply(step.state)())
+
+	view := step.View()
+	for _, want := range []string{"already exists", "replacing DB_PASSWORD", "removing  OLD_TOKEN"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the overwrite description is missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestApplyingWaitsForAnExplicitYes(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	step, _ := actionsWithApplier(t, applier)
+	step.Update(planApply(step.state)())
+
+	step.Update(press("x"))
+
+	if applier.applyCalls != 0 {
+		t.Error("the secret was applied without confirmation")
+	}
+}
+
+func TestConfirmingSendsTheSealedSecretToTheCluster(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	step, _ := actionsWithApplier(t, applier)
+	step.Update(planApply(step.state)())
+
+	step.Update(press("y"))
+	step.Update(applyNow(step.state, false)())
+
+	if applier.applyCalls == 0 {
+		t.Fatal("nothing was applied")
+	}
+	if string(applier.appliedSealed) != "kind: SealedSecret\n" {
+		t.Error("what was applied is not the sealed secret")
+	}
+	if applier.forced {
+		t.Error("the apply was forced without being asked to")
+	}
+}
+
+func TestEscapeCancelsAPendingApplyInsteadOfLeavingTheScreen(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	actions, wizardState := actionsWithApplier(t, applier)
+	actions.Update(planApply(actions.state)())
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newReviewStep(wizardState), actions}
+
+	application.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if len(application.stack) != 2 {
+		t.Error("esc left the screen instead of dismissing the confirmation")
+	}
+	if actions.plan != nil {
+		t.Error("the pending apply was not dismissed")
+	}
+}
+
+func TestEscapeGoesBackOnceThereIsNoConfirmationPending(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	actions, wizardState := actionsWithApplier(t, applier)
+	application := &app{state: wizardState, width: 100, height: 40}
+	application.stack = []step{newReviewStep(wizardState), actions}
+
+	application.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if len(application.stack) != 1 {
+		t.Error("esc did not go back when nothing was pending")
+	}
+}
+
+func TestAClashWithAnotherToolOffersToApplyAnyway(t *testing.T) {
+	applier := &fakeApplier{supported: true, applyErr: fmt.Errorf("applying: %w: taken", kube.ErrConflict)}
+	step, _ := actionsWithApplier(t, applier)
+	step.Update(planApply(step.state)())
+
+	step.Update(appliedMsg{err: applier.applyErr})
+
+	if !step.conflict {
+		t.Fatal("the clash was not recognised")
+	}
+	if !strings.Contains(step.Footer(), "f apply anyway") {
+		t.Errorf("forcing was not offered: %q", step.Footer())
+	}
+
+	step.Update(press("f"))
+	step.Update(applyNow(step.state, true)())
+
+	if !applier.forced {
+		t.Error("the second attempt did not force the apply")
+	}
+}
+
+func TestFailingToApplyForAnotherReasonDoesNotOfferToForce(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	step, _ := actionsWithApplier(t, applier)
+	step.Update(planApply(step.state)())
+
+	step.Update(appliedMsg{err: fmt.Errorf("applying: %w: nope", kube.ErrForbidden)})
+
+	if step.conflict {
+		t.Error("forcing was offered for a permission problem")
+	}
+	if !strings.Contains(step.View(), "not allowed to write sealed secrets") {
+		t.Errorf("the reason was not explained:\n%s", step.View())
+	}
+}
+
+func TestASuccessfulApplyEndsTheWizardSayingWhatHappened(t *testing.T) {
+	applier := &fakeApplier{supported: true}
+	step, _ := actionsWithApplier(t, applier)
+
+	_, cmd := step.Update(appliedMsg{})
+	message, ok := cmd().(finishedMsg)
+
+	if !ok {
+		t.Fatal("the wizard did not finish after applying")
+	}
+	if !strings.Contains(message.outcome, "applied db-creds") {
+		t.Errorf("outcome = %q, want what was applied", message.outcome)
 	}
 }

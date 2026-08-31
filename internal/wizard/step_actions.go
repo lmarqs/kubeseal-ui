@@ -2,12 +2,14 @@ package wizard
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/lmarqs/kubeseal-ui/internal/kube"
 	"github.com/lmarqs/kubeseal-ui/internal/seal"
 )
 
@@ -16,6 +18,7 @@ type action int
 
 const (
 	actionValidate action = iota
+	actionApply
 	actionSave
 	actionPrint
 	actionQuit
@@ -32,6 +35,11 @@ type actionsStep struct {
 	saveForm *huh.Form
 	savePath string
 
+	// plan is set while an apply is waiting to be confirmed.
+	plan *applyPlan
+	// conflict is set when an apply was refused because another tool owns fields.
+	conflict bool
+
 	busy    string
 	message string
 	failure string
@@ -45,13 +53,32 @@ func newActionsStep(state *state) *actionsStep {
 func (s *actionsStep) Heading() string { return "What now?" }
 
 func (s *actionsStep) Footer() string {
-	if s.saveForm != nil {
-		return "enter save"
-	}
-	if s.busy != "" {
+	switch {
+	case s.busy != "":
 		return ""
+	case s.plan != nil && s.conflict:
+		return "f apply anyway   n cancel"
+	case s.plan != nil:
+		return "y apply   n cancel"
+	case s.saveForm != nil:
+		return "enter save"
+	default:
+		return "↑/↓ choose   enter do it"
 	}
-	return "↑/↓ choose   enter do it"
+}
+
+// handleEscape dismisses a pending apply rather than leaving the screen.
+func (s *actionsStep) handleEscape() bool {
+	if s.plan == nil {
+		return false
+	}
+	s.cancelApply()
+	return true
+}
+
+func (s *actionsStep) cancelApply() {
+	s.plan = nil
+	s.conflict = false
 }
 
 func (s *actionsStep) Init() tea.Cmd {
@@ -74,6 +101,9 @@ func (s *actionsStep) choices() []huh.Option[action] {
 
 	if s.canValidate() {
 		options = append(options, huh.NewOption("check the controller can decrypt it", actionValidate))
+	}
+	if s.state.connection.Applier != nil {
+		options = append(options, huh.NewOption("apply it to the cluster", actionApply))
 	}
 	options = append(options,
 		huh.NewOption("save it to a file", actionSave),
@@ -120,6 +150,15 @@ func (s *actionsStep) Update(message tea.Msg) (step, tea.Cmd) {
 		}
 		return s, finish("wrote " + typed.path)
 
+	case applyPlannedMsg:
+		s.busy = ""
+		s.acceptPlan(typed.plan)
+		return s, nil
+
+	case appliedMsg:
+		s.busy = ""
+		return s.afterApply(typed.err)
+
 	case spinnerTickMsg:
 		if s.busy == "" {
 			return s, nil
@@ -131,6 +170,9 @@ func (s *actionsStep) Update(message tea.Msg) (step, tea.Cmd) {
 
 	if s.busy != "" {
 		return s, nil
+	}
+	if s.plan != nil {
+		return s.confirmApply(message)
 	}
 	if s.saveForm != nil {
 		return s.updateSave(message)
@@ -155,6 +197,8 @@ func (s *actionsStep) updateChoice(message tea.Msg) (step, tea.Cmd) {
 	switch s.chosen {
 	case actionValidate:
 		return s, s.validate()
+	case actionApply:
+		return s, s.startApply()
 	case actionSave:
 		s.askWhereToSave()
 		return s, s.saveForm.Init()
@@ -163,6 +207,78 @@ func (s *actionsStep) updateChoice(message tea.Msg) (step, tea.Cmd) {
 	default:
 		return s, finish("nothing written")
 	}
+}
+
+// startApply works out what applying would change before anything is sent.
+func (s *actionsStep) startApply() tea.Cmd {
+	s.busy = "Checking what is already in the cluster…"
+	s.message = ""
+	return tea.Batch(s.spinner.tick(), planApply(s.state))
+}
+
+// acceptPlan shows what the apply would do, or explains why it cannot happen.
+func (s *actionsStep) acceptPlan(plan applyPlan) {
+	switch {
+	case plan.err != nil:
+		s.failure = plan.err.Error()
+		if hint := applyFailureHint(plan.err); hint != "" {
+			s.failure += "\n" + hint
+		}
+	case !plan.supported:
+		s.failure = "this cluster has no SealedSecret resource, so the controller " +
+			"does not appear to be installed"
+	default:
+		s.plan = &plan
+	}
+}
+
+// confirmApply waits for an explicit yes, because applying changes the cluster.
+func (s *actionsStep) confirmApply(message tea.Msg) (step, tea.Cmd) {
+	key, ok := message.(tea.KeyMsg)
+	if !ok {
+		return s, nil
+	}
+
+	switch key.String() {
+	case "y", "enter":
+		if s.conflict {
+			return s, nil
+		}
+		return s, s.apply(false)
+	case "f":
+		if !s.conflict {
+			return s, nil
+		}
+		return s, s.apply(true)
+	case "n", "q":
+		s.cancelApply()
+	}
+
+	return s, nil
+}
+
+func (s *actionsStep) apply(force bool) tea.Cmd {
+	s.busy = "Applying…"
+	s.failure = ""
+	return tea.Batch(s.spinner.tick(), applyNow(s.state, force))
+}
+
+// afterApply reports the outcome, offering to force only when that is the problem.
+func (s *actionsStep) afterApply(err error) (step, tea.Cmd) {
+	if err == nil {
+		return s, finish("applied " + s.state.draft.Name.String() + " to " + s.state.contextName)
+	}
+
+	s.failure = err.Error()
+	if hint := applyFailureHint(err); hint != "" {
+		s.failure += "\n" + hint
+	}
+	s.conflict = errors.Is(err, kube.ErrConflict)
+	if !s.conflict {
+		s.plan = nil
+	}
+
+	return s, nil
 }
 
 func (s *actionsStep) updateSave(message tea.Msg) (step, tea.Cmd) {
@@ -227,6 +343,10 @@ func (s *actionsStep) View() string {
 		return indent(s.spinner.view(s.busy))
 	}
 
+	if s.plan != nil {
+		return s.confirmationView()
+	}
+
 	form := s.form
 	if s.saveForm != nil {
 		form = s.saveForm
@@ -246,6 +366,21 @@ func (s *actionsStep) View() string {
 	}
 	if s.failure != "" {
 		sections = append(sections, indent(failureStyle.Render(markFailed+" "+s.failure)))
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+// confirmationView describes the change about to be made to the cluster.
+func (s *actionsStep) confirmationView() string {
+	sections := []string{indent(s.plan.describe(s.state.draft.Namespace, s.state.draft.Name.String()))}
+
+	if s.failure != "" {
+		sections = append(sections, indent(failureStyle.Render(markFailed+" "+s.failure)))
+	}
+	if s.conflict {
+		sections = append(sections, indent(warningStyle.Render(
+			markWarning+" applying anyway takes ownership of the contested fields")))
 	}
 
 	return strings.Join(sections, "\n\n")

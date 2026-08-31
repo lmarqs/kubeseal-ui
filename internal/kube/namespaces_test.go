@@ -23,7 +23,7 @@ func namespace(name string) *corev1.Namespace {
 func TestNamespacesAreListedSortedByName(t *testing.T) {
 	clientset := fake.NewClientset(namespace("payments"), namespace("default"), namespace("kube-system"))
 
-	names, err := kube.NewCluster(clientset).Namespaces(context.Background())
+	names, err := kube.NewCluster(clientset, nil).Namespaces(context.Background())
 	if err != nil {
 		t.Fatalf("Namespaces() returned error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestNamespacesReportsForbiddenSoTheWizardCanAskInstead(t *testing.T) {
 				schema.GroupResource{Resource: "namespaces"}, "", errors.New("user cannot list namespaces"))
 		})
 
-	_, err := kube.NewCluster(clientset).Namespaces(context.Background())
+	_, err := kube.NewCluster(clientset, nil).Namespaces(context.Background())
 
 	if !errors.Is(err, kube.ErrForbidden) {
 		t.Fatalf("error = %v, want ErrForbidden", err)

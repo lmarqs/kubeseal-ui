@@ -26,6 +26,7 @@ type Connection struct {
 	Cluster      Cluster
 	Certificates Certificates
 	Validator    Validator
+	Applier      Applier
 	// Server is the cluster's address, which identifies it when caching.
 	Server string
 }
@@ -44,6 +45,18 @@ type Certificates interface {
 // Validator asks a controller whether it could decrypt a sealed secret.
 type Validator interface {
 	Validate(ctx context.Context, controller seal.Controller, sealed []byte) error
+}
+
+// Applier puts a sealed secret into the cluster.
+type Applier interface {
+	// Supported reports whether the cluster knows about SealedSecrets at all.
+	Supported(ctx context.Context) (bool, error)
+	// Existing reports whether one of this name is already there, and which keys it
+	// holds, so an overwrite can be described before it happens.
+	Existing(ctx context.Context, namespace, name string) (found bool, keys []string, err error)
+	// Apply sends the sealed secret, taking ownership of contested fields only when
+	// force is set.
+	Apply(ctx context.Context, sealed []byte, force bool) error
 }
 
 // Writer persists a finished sealed secret.

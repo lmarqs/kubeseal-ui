@@ -29,7 +29,7 @@ func TestDiscoverControllersPrefersTheStockInstallation(t *testing.T) {
 		service("infra", "sealed-secrets", map[string]string{"app.kubernetes.io/name": "sealed-secrets"}),
 	)
 
-	found, err := kube.NewCluster(clientset).DiscoverControllers(context.Background())
+	found, err := kube.NewCluster(clientset, nil).DiscoverControllers(context.Background())
 	if err != nil {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestDiscoverControllersFindsLabelledServicesInAnyNamespace(t *testing.T) {
 		service("default", "unrelated", nil),
 	)
 
-	found, err := kube.NewCluster(clientset).DiscoverControllers(context.Background())
+	found, err := kube.NewCluster(clientset, nil).DiscoverControllers(context.Background())
 	if err != nil {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestDiscoverControllersFallsBackToTheNamingConvention(t *testing.T) {
 		service("default", "postgres", nil),
 	)
 
-	found, err := kube.NewCluster(clientset).DiscoverControllers(context.Background())
+	found, err := kube.NewCluster(clientset, nil).DiscoverControllers(context.Background())
 	if err != nil {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestDiscoverControllersFallsBackToTheNamingConvention(t *testing.T) {
 func TestDiscoverControllersReportsNoneWhenNothingMatches(t *testing.T) {
 	clientset := fake.NewClientset(service("default", "postgres", nil))
 
-	found, err := kube.NewCluster(clientset).DiscoverControllers(context.Background())
+	found, err := kube.NewCluster(clientset, nil).DiscoverControllers(context.Background())
 	if err != nil {
 		t.Fatalf("DiscoverControllers() returned error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestDiscoverControllersReportsForbiddenWhenServicesCannotBeListed(t *testin
 				schema.GroupResource{Resource: "services"}, "", errors.New("nope"))
 		})
 
-	_, err := kube.NewCluster(clientset).DiscoverControllers(context.Background())
+	_, err := kube.NewCluster(clientset, nil).DiscoverControllers(context.Background())
 
 	if !errors.Is(err, kube.ErrForbidden) {
 		t.Fatalf("error = %v, want ErrForbidden", err)

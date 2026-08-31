@@ -80,6 +80,7 @@ func (w wizardClusters) Open(contextName string) (wizard.Connection, error) {
 			Cache:        w.options.certCache(),
 		},
 		Validator: controllerValidator{clientConfig: client.ClientConfig()},
+		Applier:   cluster,
 		Server:    server,
 	}, nil
 }
