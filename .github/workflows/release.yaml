@@ -1,0 +1,68 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install semantic-release
+        run: |
+          npm install --no-save --no-audit --no-fund \
+            semantic-release@24 \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/exec \
+            @semantic-release/git \
+            @semantic-release/github
+
+      - name: Create release tag and notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      # semantic-release tags the release commit; goreleaser needs that tag present
+      # locally to derive the version and append artifacts to the GitHub release.
+      - name: Detect release tag
+        id: tag
+        run: |
+          git fetch --tags --force
+          if tag="$(git describe --exact-match --tags HEAD 2>/dev/null)"; then
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "no new release tag on HEAD; skipping artifact publish"
+          fi
+
+      - name: Publish binaries
+        if: steps.tag.outputs.tag != ''
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

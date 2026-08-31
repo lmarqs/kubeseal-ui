@@ -1,0 +1,43 @@
+version: 2
+
+project_name: ksui
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: ksui
+    main: ./cmd/ksui
+    binary: ksui
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/lmarqs/kubeseal-ui/internal/version.version={{ .Version }}
+      - -X github.com/lmarqs/kubeseal-ui/internal/version.commit={{ .FullCommit }}
+      - -X github.com/lmarqs/kubeseal-ui/internal/version.date={{ .Date }}
+
+archives:
+  - id: ksui
+    ids: [ksui]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
+
+# semantic-release creates the tag and the GitHub release; goreleaser appends
+# the built artifacts to it.
+release:
+  mode: append
